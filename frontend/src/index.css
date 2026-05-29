@@ -1,0 +1,29 @@
+@import "tailwindcss";
+
+:root {
+  --color-teal: #0D9488;
+  --color-cream: #FEF7ED;
+  --color-orange: #F97316;
+  --color-green: #10B981;
+  --color-red: #EF4444;
+}
+
+@theme {
+  --color-ozzy-teal: #0D9488;
+  --color-ozzy-cream: #FEF7ED;
+  --color-ozzy-orange: #F97316;
+  --color-ozzy-green: #10B981;
+  --color-ozzy-red: #EF4444;
+}
+
+body {
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  background: #F8FAFC;
+  color: #1E293B;
+}
+
+.dark body,
+.dark {
+  background: #0F172A;
+  color: #E2E8F0;
+}
