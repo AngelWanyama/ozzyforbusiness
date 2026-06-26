@@ -60,7 +60,7 @@ export default function Reports() {
 
   return (
     <div>
-      <h1 className="text-xl font-bold text-gray-900 dark:text-white mb-4">Reports & Analytics</h1>
+      <h1 className="text-xl font-bold text-gray-900 dark:text-white mb-4">How's My Business?</h1>
 
       {/* Tabs */}
       <div className="flex gap-1 mb-6 bg-gray-100 dark:bg-gray-800 p-1 rounded-xl">
@@ -92,7 +92,7 @@ export default function Reports() {
       {tab === 'expenses' && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="bg-white dark:bg-gray-800 rounded-2xl p-5 border border-gray-100 dark:border-gray-700 shadow-sm">
-            <h2 className="font-semibold text-gray-900 dark:text-white mb-4">Expense Breakdown</h2>
+            <h2 className="font-semibold text-gray-900 dark:text-white mb-4">What I Spent</h2>
             <div className="h-64">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
