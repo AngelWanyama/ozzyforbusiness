@@ -1,6 +1,6 @@
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import { LogOut, Globe, Bell, HelpCircle, CreditCard } from 'lucide-react';
+import { LogOut, Globe, Bell, HelpCircle, CreditCard, Languages, UserPlus } from 'lucide-react';
 
 export default function Settings() {
   const { plan, usage, logout } = useAuth();
@@ -51,6 +51,26 @@ export default function Settings() {
           <SettingRow icon={<Globe size={18} />} title="Currency" subtitle="UGX - Ugandan Shilling" />
           <SettingRow icon={<Globe size={18} />} title="Business Name" subtitle="Not set" />
           <SettingRow icon={<Globe size={18} />} title="Business Type" subtitle="Not set" />
+        </div>
+      </div>
+
+      {/* Notifications */}
+      <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm mb-4 overflow-hidden">
+        <div className="px-5 pt-4 pb-1">
+          <p className="text-xs font-semibold uppercase tracking-wider text-gray-400">Language / Olulimi</p>
+        </div>
+        <div className="divide-y divide-gray-100 dark:divide-gray-700">
+          <SettingRow icon={<Languages size={18} />} title="App Language" subtitle="English (current)" />
+        </div>
+      </div>
+
+      {/* Manage Access */}
+      <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm mb-4 overflow-hidden">
+        <div className="px-5 pt-4 pb-1">
+          <p className="text-xs font-semibold uppercase tracking-wider text-gray-400">Manage Access</p>
+        </div>
+        <div className="divide-y divide-gray-100 dark:divide-gray-700">
+          <SettingRow icon={<UserPlus size={18} />} title="Add Helper" subtitle="Give someone else access to your business" />
         </div>
       </div>
 

@@ -1,5 +1,5 @@
 import { NavLink, Outlet } from 'react-router-dom';
-import { LayoutDashboard, Receipt, Package, BarChart3, Settings, Moon, Sun } from 'lucide-react';
+import { LayoutDashboard, MessageSquare, History, BarChart3, Settings, Moon, Sun } from 'lucide-react';
 import { useState } from 'react';
 
 export default function AppLayout() {
@@ -10,7 +10,7 @@ export default function AppLayout() {
   };
 
   const linkClass = ({ isActive }: { isActive: boolean }) =>
-    `flex flex-col items-center gap-0.5 text-[10px] font-medium transition-colors px-2 py-1 min-w-[56px] min-h-[44px] justify-center ${
+    `flex flex-col items-center gap-0.5 text-[10px] font-medium transition-colors px-2 py-1 min-w-[56px] min-h-[48px] justify-center ${
       isActive ? 'text-[#0D9488]' : 'text-gray-400 dark:text-gray-500'
     }`;
 
@@ -33,17 +33,17 @@ export default function AppLayout() {
         <Outlet />
       </main>
 
-      {/* Bottom Nav */}
+      {/* Bottom Nav — Figma 5-tab: Home, Chat, History, Reports, Settings */}
       <nav className="fixed bottom-0 left-0 right-0 z-20 bg-white dark:bg-gray-900 border-t border-gray-200 dark:border-gray-800">
         <div className="max-w-6xl mx-auto flex justify-around py-1">
           <NavLink to="/dashboard" className={linkClass}>
-            <LayoutDashboard size={20} /><span>Dashboard</span>
+            <LayoutDashboard size={20} /><span>Home</span>
+          </NavLink>
+          <NavLink to="/chat" className={linkClass}>
+            <MessageSquare size={20} /><span>Chat</span>
           </NavLink>
           <NavLink to="/transactions" className={linkClass}>
-            <Receipt size={20} /><span>Transactions</span>
-          </NavLink>
-          <NavLink to="/inventory" className={linkClass}>
-            <Package size={20} /><span>Inventory</span>
+            <History size={20} /><span>History</span>
           </NavLink>
           <NavLink to="/reports" className={linkClass}>
             <BarChart3 size={20} /><span>Reports</span>

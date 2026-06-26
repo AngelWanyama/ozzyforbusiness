@@ -4,6 +4,7 @@ import ProtectedRoute from './components/ProtectedRoute';
 import AppLayout from './components/AppLayout';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
+import Chat from './pages/Chat';
 import Transactions from './pages/Transactions';
 import Inventory from './pages/Inventory';
 import Reports from './pages/Reports';
@@ -18,6 +19,7 @@ export default function App() {
           <Route path="/" element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
             <Route index element={<Navigate to="/dashboard" replace />} />
             <Route path="dashboard" element={<Dashboard />} />
+            <Route path="chat" element={<Chat />} />
             <Route path="transactions" element={<Transactions />} />
             <Route path="inventory" element={<Inventory />} />
             <Route path="reports" element={<Reports />} />

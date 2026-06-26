@@ -37,7 +37,7 @@ export default function Dashboard() {
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
         <div className="bg-white dark:bg-gray-800 rounded-2xl p-5 shadow-sm border border-gray-100 dark:border-gray-700">
           <div className="flex items-center justify-between mb-3">
-            <span className="text-sm font-medium text-gray-500 dark:text-gray-400">Sales</span>
+            <span className="text-sm font-medium text-gray-500 dark:text-gray-400">Today's Sales</span>
             <div className="w-10 h-10 rounded-xl bg-green-100 dark:bg-green-900/30 flex items-center justify-center">
               <TrendingUp size={20} className="text-green-600" />
             </div>
@@ -46,7 +46,7 @@ export default function Dashboard() {
         </div>
         <div className="bg-white dark:bg-gray-800 rounded-2xl p-5 shadow-sm border border-gray-100 dark:border-gray-700">
           <div className="flex items-center justify-between mb-3">
-            <span className="text-sm font-medium text-gray-500 dark:text-gray-400">Expenses</span>
+            <span className="text-sm font-medium text-gray-500 dark:text-gray-400">What I Spent</span>
             <div className="w-10 h-10 rounded-xl bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
               <TrendingDown size={20} className="text-red-600" />
             </div>

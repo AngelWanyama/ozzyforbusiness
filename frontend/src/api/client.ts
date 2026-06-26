@@ -27,6 +27,7 @@ class ApiClient {
     return data;
   }
 
+  // === Auth ===
   async requestOTP(phoneNumber: string) {
     return this.request<{ message: string; debug_code: string }>('/auth/otp/request', {
       method: 'POST', body: JSON.stringify({ phone_number: phoneNumber }),
@@ -41,19 +42,67 @@ class ApiClient {
     return data;
   }
 
-  async getReportSummary() { return this.request<any>('/reports/summary'); }
-  async getTransactions(skip = 0, limit = 200) { return this.request<{ total: number; items: any[] }>(`/transactions?skip=${skip}&limit=${limit}`); }
-  async createTransaction(data: any) { return this.request('/transactions', { method: 'POST', body: JSON.stringify(data) }); }
-  async updateTransaction(id: string, data: any) { return this.request(`/transactions/${id}`, { method: 'PUT', body: JSON.stringify(data) }); }
-  async deleteTransaction(id: string) { return this.request(`/transactions/${id}`, { method: 'DELETE' }); }
-  async getInventory() { return this.request<any[]>('/inventory'); }
-  async createItem(data: any) { return this.request('/inventory', { method: 'POST', body: JSON.stringify(data) }); }
-  async updateItem(id: string, data: any) { return this.request(`/inventory/${id}`, { method: 'PUT', body: JSON.stringify(data) }); }
-  async adjustStock(id: string, amount: number) { return this.request(`/inventory/${id}/adjust-stock`, { method: 'POST', body: JSON.stringify({ adjustment_amount: amount }) }); }
-  async getUserPlan() { return this.request<any>('/users/plan'); }
-  async getUserUsage() { return this.request<any>('/users/usage'); }
-  async getAccountingReport(params: any) { return this.request<any>(`/reports/accounting?type=${params.type}&period=${params.period}`); }
-  async getLatestSummary() { return this.request<any>('/summaries/latest'); }
+  // === Transactions (Backend: POST + GET only, no PUT/DELETE) ===
+  async getTransactions(skip = 0, limit = 200) {
+    return this.request<{ total: number; items: any[] }>(`/transactions?skip=${skip}&limit=${limit}`);
+  }
+
+  async createTransaction(data: any) {
+    return this.request('/transactions', { method: 'POST', body: JSON.stringify(data) });
+  }
+
+  // === Chat/NLP ===
+  async processChat(text: string) {
+    return this.request<any>('/chat/process', { method: 'POST', body: JSON.stringify({ text }) });
+  }
+
+  // === Reports ===
+  async getReportSummary() {
+    return this.request<any>('/reports/summary');
+  }
+
+  async getAccountingReport(params: { type: string; period: string }) {
+    return this.request<any>(`/reports/accounting?type=${params.type}&period=${params.period}`);
+  }
+
+  // === Summaries ===
+  async getLatestSummary() {
+    return this.request<any>('/summaries/latest');
+  }
+
+  async getDailySummary(date: string) {
+    return this.request<any>(`/summaries/daily?date=${date}`);
+  }
+
+  // === Inventory (Backend: GET + POST + PUT + stock-adjust) ===
+  async getInventory(skip = 0, limit = 100) {
+    return this.request<any[]>(`/inventory?skip=${skip}&limit=${limit}`);
+  }
+
+  async createItem(data: any) {
+    return this.request('/inventory', { method: 'POST', body: JSON.stringify(data) });
+  }
+
+  async updateItem(id: string, data: any) {
+    return this.request(`/inventory/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+  }
+
+  async adjustStock(id: string, amount: number) {
+    return this.request(`/inventory/${id}/adjust-stock`, { method: 'POST', body: JSON.stringify({ adjustment_amount: amount }) });
+  }
+
+  // === Users ===
+  async getUserPlan() {
+    return this.request<any>('/users/plan');
+  }
+
+  async getUserUsage() {
+    return this.request<any>('/users/usage');
+  }
+
+  async upgradePlan() {
+    return this.request('/users/upgrade', { method: 'POST', body: JSON.stringify({}) });
+  }
 }
 
 export const api = new ApiClient();
