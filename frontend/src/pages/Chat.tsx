@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Send, Plus, TrendingUp, TrendingDown } from 'lucide-react';
+import { Send, Plus, TrendingUp, TrendingDown, History } from 'lucide-react';
 import api from '../api/client';
 import { useNavigate } from 'react-router-dom';
 
