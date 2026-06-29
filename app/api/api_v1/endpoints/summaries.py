@@ -62,4 +62,31 @@ async def get_daily_summary(
     
     return summary
 
+@router.get("/weekly", response_model=SummarySchema)
+async def get_weekly_summary(
+    date: str = Query(..., description="Any date within the target week (YYYY-MM-DD)"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    try:
+        dt = datetime.strptime(date, "%Y-%m-%d")
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
+    
+    stmt = select(Summary).where(
+        and_(
+            Summary.user_id == current_user.id,
+            Summary.type == SummaryType.WEEKLY,
+            Summary.period_start <= dt,
+            Summary.period_end >= dt
+        )
+    )
+    result = await db.execute(stmt)
+    summary = result.scalar_one_or_none()
+    
+    if not summary:
+        raise HTTPException(status_code=404, detail="No summary found for this week")
+    
+    return summary
+
 # Similar endpoints for weekly and monthly can be added here

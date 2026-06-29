@@ -18,8 +18,11 @@ class Transaction(Base):
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
     item_id = Column(UUID(as_uuid=True), ForeignKey("items.id"), nullable=True)
     type = Column(Enum(TransactionType), nullable=False)
-    amount = Column(Numeric(precision=18, scale=2), nullable=False)
-    currency = Column(String, nullable=False)
+    amount = Column(Numeric(precision=18, scale=2), nullable=False) # Converted to base currency
+    currency = Column(String, nullable=False) # Base currency at time of transaction
+    original_amount = Column(Numeric(precision=18, scale=2), nullable=True)
+    original_currency = Column(String, nullable=True)
+    exchange_rate = Column(Numeric(precision=18, scale=6), nullable=True)
     description = Column(String, nullable=True)
     quantity = Column(Numeric(precision=18, scale=2), default=1)
     transaction_date = Column(DateTime, default=datetime.utcnow)

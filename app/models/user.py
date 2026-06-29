@@ -16,6 +16,7 @@ class User(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     phone_number = Column(String, unique=True, index=True, nullable=False)
     business_name = Column(String, nullable=True)
+    owner_name = Column(String, nullable=True)
     business_type = Column(String, nullable=True)
     currency = Column(String, default="UGX")
     plan_type = Column(SQLEnum(PlanType), default=PlanType.FREE, nullable=False)
