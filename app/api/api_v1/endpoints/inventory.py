@@ -21,6 +21,18 @@ async def read_items(
     result = await db.execute(stmt)
     return result.scalars().all()
 
+@router.get("/stock", response_model=List[Item])
+async def get_stock_snapshot(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Returns current inventory snapshot (all items with stock levels).
+    """
+    stmt = select(ItemModel).where(ItemModel.user_id == current_user.id)
+    result = await db.execute(stmt)
+    return result.scalars().all()
+
 @router.post("/", response_model=Item)
 async def create_item(
     *,

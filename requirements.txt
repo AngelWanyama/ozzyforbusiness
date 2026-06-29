@@ -12,3 +12,5 @@ python-jose[cryptography]
 passlib[bcrypt]
 google-generativeai
 reportlab
+email-validator
+httpx

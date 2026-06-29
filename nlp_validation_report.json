@@ -1,0 +1,1276 @@
+{
+  "timestamp": "2026-05-27T17:58:27.462628",
+  "total_samples": 53,
+  "accuracies": {
+    "intent": 0.9622641509433962,
+    "amount": 0.9811320754716981,
+    "item": 0.5849056603773585,
+    "quantity": 0.7547169811320755
+  },
+  "gemini_enabled": false,
+  "details": [
+    {
+      "input": "Sold dress 20,000",
+      "expected": {
+        "intent": "sale",
+        "amount": 20000,
+        "item": "dress",
+        "quantity": 1
+      },
+      "actual": {
+        "intent": "sale",
+        "amount": 20000.0,
+        "item": "dress",
+        "quantity": 1.0,
+        "currency": "UGX",
+        "transaction_date": "2026-05-27",
+        "confidence": 0.3
+      },
+      "matches": {
+        "intent": true,
+        "amount": true,
+        "item": true,
+        "quantity": true
+      }
+    },
+    {
+      "input": "Bought 3kg onions 5000",
+      "expected": {
+        "intent": "expense",
+        "amount": 5000,
+        "item": "onions",
+        "quantity": 3
+      },
+      "actual": {
+        "intent": "expense",
+        "amount": 5000.0,
+        "item": "kg",
+        "quantity": 3.0,
+        "currency": "UGX",
+        "transaction_date": "2026-05-27",
+        "confidence": 0.3
+      },
+      "matches": {
+        "intent": true,
+        "amount": true,
+        "item": false,
+        "quantity": true
+      }
+    },
+    {
+      "input": "Paid mama rent 300k",
+      "expected": {
+        "intent": "expense",
+        "amount": 300000,
+        "item": "rent",
+        "quantity": 1
+      },
+      "actual": {
+        "intent": "expense",
+        "amount": 300000.0,
+        "item": "mama",
+        "quantity": 1.0,
+        "currency": "UGX",
+        "transaction_date": "2026-05-27",
+        "confidence": 0.3
+      },
+      "matches": {
+        "intent": true,
+        "amount": true,
+        "item": false,
+        "quantity": true
+      }
+    },
+    {
+      "input": "Stock now 10 dresses",
+      "expected": {
+        "intent": "inventory",
+        "amount": 0,
+        "item": "dresses",
+        "quantity": 10
+      },
+      "actual": {
+        "intent": "inventory",
+        "amount": 0.0,
+        "item": "dresses",
+        "quantity": 1.0,
+        "currency": "UGX",
+        "transaction_date": "2026-05-27",
+        "confidence": 0.3
+      },
+      "matches": {
+        "intent": true,
+        "amount": true,
+        "item": true,
+        "quantity": false
+      }
+    },
+    {
+      "input": "Sold 2 bags of sugar 10k each",
+      "expected": {
+        "intent": "sale",
+        "amount": 20000,
+        "item": "sugar",
+        "quantity": 2
+      },
+      "actual": {
+        "intent": "sale",
+        "amount": 10000.0,
+        "item": "bags",
+        "quantity": 2.0,
+        "currency": "UGX",
+        "transaction_date": "2026-05-27",
+        "confidence": 0.3
+      },
+      "matches": {
+        "intent": true,
+        "amount": false,
+        "item": false,
+        "quantity": true
+      }
+    },
+    {
+      "input": "Received 100k for catering",
+      "expected": {
+        "intent": "sale",
+        "amount": 100000,
+        "item": "catering",
+        "quantity": 1
+      },
+      "actual": {
+        "intent": "sale",
+        "amount": 100000.0,
+        "item": "k",
+        "quantity": 1.0,
+        "currency": "UGX",
+        "transaction_date": "2026-05-27",
+        "confidence": 0.3
+      },
+      "matches": {
+        "intent": true,
+        "amount": true,
+        "item": false,
+        "quantity": true
+      }
+    },
+    {
+      "input": "Paid for water 15k",
+      "expected": {
+        "intent": "expense",
+        "amount": 15000,
+        "item": "water",
+        "quantity": 1
+      },
+      "actual": {
+        "intent": "expense",
+        "amount": 15000.0,
+        "item": "water",
+        "quantity": 1.0,
+        "currency": "UGX",
+        "transaction_date": "2026-05-27",
+        "confidence": 0.3
+      },
+      "matches": {
+        "intent": true,
+        "amount": true,
+        "item": true,
+        "quantity": true
+      }
+    },
+    {
+      "input": "Electricity bill 40,000",
+      "expected": {
+        "intent": "expense",
+        "amount": 40000,
+        "item": "electricity",
+        "quantity": 1
+      },
+      "actual": {
+        "intent": "expense",
+        "amount": 40000.0,
+        "item": "electricity",
+        "quantity": 1.0,
+        "currency": "UGX",
+        "transaction_date": "2026-05-27",
+        "confidence": 0.3
+      },
+      "matches": {
+        "intent": true,
+        "amount": true,
+        "item": true,
+        "quantity": true
+      }
+    },
+    {
+      "input": "Bought 5 crates of soda for 150k",
+      "expected": {
+        "intent": "expense",
+        "amount": 150000,
+        "item": "soda",
+        "quantity": 5
+      },
+      "actual": {
+        "intent": "expense",
+        "amount": 150000.0,
+        "item": "crates",
+        "quantity": 5.0,
+        "currency": "UGX",
+        "transaction_date": "2026-05-27",
+        "confidence": 0.3
+      },
+      "matches": {
+        "intent": true,
+        "amount": true,
+        "item": false,
+        "quantity": true
+      }
+    },
+    {
+      "input": "Paid transport 5000",
+      "expected": {
+        "intent": "expense",
+        "amount": 5000,
+        "item": "transport",
+        "quantity": 1
+      },
+      "actual": {
+        "intent": "expense",
+        "amount": 5000.0,
+        "item": "unknown",
+        "quantity": 1.0,
+        "currency": "UGX",
+        "transaction_date": "2026-05-27",
+        "confidence": 0.3
+      },
+      "matches": {
+        "intent": true,
+        "amount": true,
+        "item": false,
+        "quantity": true
+      }
+    },
+    {
+      "input": "Customer paid 20k for hair",
+      "expected": {
+        "intent": "sale",
+        "amount": 20000,
+        "item": "hair",
+        "quantity": 1
+      },
+      "actual": {
+        "intent": "expense",
+        "amount": 20000.0,
+        "item": "customer",
+        "quantity": 1.0,
+        "currency": "UGX",
+        "transaction_date": "2026-05-27",
+        "confidence": 0.3
+      },
+      "matches": {
+        "intent": false,
+        "amount": true,
+        "item": false,
+        "quantity": true
+      }
+    },
+    {
+      "input": "Bought new shelf 200k",
+      "expected": {
+        "intent": "expense",
+        "amount": 200000,
+        "item": "shelf",
+        "quantity": 1
+      },
+      "actual": {
+        "intent": "expense",
+        "amount": 200000.0,
+        "item": "new",
+        "quantity": 1.0,
+        "currency": "UGX",
+        "transaction_date": "2026-05-27",
+        "confidence": 0.3
+      },
+      "matches": {
+        "intent": true,
+        "amount": true,
+        "item": false,
+        "quantity": true
+      }
+    },
+    {
+      "input": "Sold 3 shirts 60,000",
+      "expected": {
+        "intent": "sale",
+        "amount": 60000,
+        "item": "shirts",
+        "quantity": 3
+      },
+      "actual": {
+        "intent": "sale",
+        "amount": 60000.0,
+        "item": "shirts",
+        "quantity": 1.0,
+        "currency": "UGX",
+        "transaction_date": "2026-05-27",
+        "confidence": 0.3
+      },
+      "matches": {
+        "intent": true,
+        "amount": true,
+        "item": true,
+        "quantity": false
+      }
+    },
+    {
+      "input": "Stocked 20 more soaps",
+      "expected": {
+        "intent": "inventory",
+        "amount": 0,
+        "item": "soaps",
+        "quantity": 20
+      },
+      "actual": {
+        "intent": "inventory",
+        "amount": 0.0,
+        "item": "stocked",
+        "quantity": 1.0,
+        "currency": "UGX",
+        "transaction_date": "2026-05-27",
+        "confidence": 0.3
+      },
+      "matches": {
+        "intent": true,
+        "amount": true,
+        "item": false,
+        "quantity": false
+      }
+    },
+    {
+      "input": "How much did I sell today?",
+      "expected": {
+        "intent": "query"
+      },
+      "actual": {
+        "intent": "query",
+        "amount": 0.0,
+        "item": "how",
+        "quantity": 1.0,
+        "currency": "UGX",
+        "transaction_date": "2026-05-27",
+        "confidence": 0.3
+      },
+      "matches": {
+        "intent": true,
+        "amount": true,
+        "item": true,
+        "quantity": true
+      }
+    },
+    {
+      "input": "Show me my expenses for this week",
+      "expected": {
+        "intent": "query"
+      },
+      "actual": {
+        "intent": "expense",
+        "amount": 0.0,
+        "item": "show",
+        "quantity": 1.0,
+        "currency": "UGX",
+        "transaction_date": "2026-05-27",
+        "confidence": 0.3
+      },
+      "matches": {
+        "intent": false,
+        "amount": true,
+        "item": true,
+        "quantity": true
+      }
+    },
+    {
+      "input": "Paid staff salaries 500k",
+      "expected": {
+        "intent": "expense",
+        "amount": 500000,
+        "item": "salaries",
+        "quantity": 1
+      },
+      "actual": {
+        "intent": "expense",
+        "amount": 500000.0,
+        "item": "staff",
+        "quantity": 1.0,
+        "currency": "UGX",
+        "transaction_date": "2026-05-27",
+        "confidence": 0.3
+      },
+      "matches": {
+        "intent": true,
+        "amount": true,
+        "item": false,
+        "quantity": true
+      }
+    },
+    {
+      "input": "Sold phone case 15000",
+      "expected": {
+        "intent": "sale",
+        "amount": 15000,
+        "item": "phone case",
+        "quantity": 1
+      },
+      "actual": {
+        "intent": "sale",
+        "amount": 15000.0,
+        "item": "phone",
+        "quantity": 1.0,
+        "currency": "UGX",
+        "transaction_date": "2026-05-27",
+        "confidence": 0.3
+      },
+      "matches": {
+        "intent": true,
+        "amount": true,
+        "item": false,
+        "quantity": true
+      }
+    },
+    {
+      "input": "Bought 2kg rice 12000",
+      "expected": {
+        "intent": "expense",
+        "amount": 12000,
+        "item": "rice",
+        "quantity": 2
+      },
+      "actual": {
+        "intent": "expense",
+        "amount": 12000.0,
+        "item": "kg",
+        "quantity": 2.0,
+        "currency": "UGX",
+        "transaction_date": "2026-05-27",
+        "confidence": 0.3
+      },
+      "matches": {
+        "intent": true,
+        "amount": true,
+        "item": false,
+        "quantity": true
+      }
+    },
+    {
+      "input": "Sold bread 5000",
+      "expected": {
+        "intent": "sale",
+        "amount": 5000,
+        "item": "bread",
+        "quantity": 1
+      },
+      "actual": {
+        "intent": "sale",
+        "amount": 5000.0,
+        "item": "bread",
+        "quantity": 1.0,
+        "currency": "UGX",
+        "transaction_date": "2026-05-27",
+        "confidence": 0.3
+      },
+      "matches": {
+        "intent": true,
+        "amount": true,
+        "item": true,
+        "quantity": true
+      }
+    },
+    {
+      "input": "Paid for cleaning 10k",
+      "expected": {
+        "intent": "expense",
+        "amount": 10000,
+        "item": "cleaning",
+        "quantity": 1
+      },
+      "actual": {
+        "intent": "expense",
+        "amount": 10000.0,
+        "item": "cleaning",
+        "quantity": 1.0,
+        "currency": "UGX",
+        "transaction_date": "2026-05-27",
+        "confidence": 0.3
+      },
+      "matches": {
+        "intent": true,
+        "amount": true,
+        "item": true,
+        "quantity": true
+      }
+    },
+    {
+      "input": "Added 15 bags of flour to stock",
+      "expected": {
+        "intent": "inventory",
+        "amount": 0,
+        "item": "flour",
+        "quantity": 15
+      },
+      "actual": {
+        "intent": "inventory",
+        "amount": 0.0,
+        "item": "bags",
+        "quantity": 15.0,
+        "currency": "UGX",
+        "transaction_date": "2026-05-27",
+        "confidence": 0.3
+      },
+      "matches": {
+        "intent": true,
+        "amount": true,
+        "item": false,
+        "quantity": true
+      }
+    },
+    {
+      "input": "What is my profit?",
+      "expected": {
+        "intent": "query"
+      },
+      "actual": {
+        "intent": "query",
+        "amount": 0.0,
+        "item": "what",
+        "quantity": 1.0,
+        "currency": "UGX",
+        "transaction_date": "2026-05-27",
+        "confidence": 0.3
+      },
+      "matches": {
+        "intent": true,
+        "amount": true,
+        "item": true,
+        "quantity": true
+      }
+    },
+    {
+      "input": "Sold milk 3000",
+      "expected": {
+        "intent": "sale",
+        "amount": 3000,
+        "item": "milk",
+        "quantity": 1
+      },
+      "actual": {
+        "intent": "sale",
+        "amount": 3000.0,
+        "item": "milk",
+        "quantity": 1.0,
+        "currency": "UGX",
+        "transaction_date": "2026-05-27",
+        "confidence": 0.3
+      },
+      "matches": {
+        "intent": true,
+        "amount": true,
+        "item": true,
+        "quantity": true
+      }
+    },
+    {
+      "input": "Bought 10 eggs 5000",
+      "expected": {
+        "intent": "expense",
+        "amount": 5000,
+        "item": "eggs",
+        "quantity": 10
+      },
+      "actual": {
+        "intent": "expense",
+        "amount": 5000.0,
+        "item": "eggs",
+        "quantity": 10.0,
+        "currency": "UGX",
+        "transaction_date": "2026-05-27",
+        "confidence": 0.3
+      },
+      "matches": {
+        "intent": true,
+        "amount": true,
+        "item": true,
+        "quantity": true
+      }
+    },
+    {
+      "input": "Paid loan 100k",
+      "expected": {
+        "intent": "expense",
+        "amount": 100000,
+        "item": "loan",
+        "quantity": 1
+      },
+      "actual": {
+        "intent": "expense",
+        "amount": 100000.0,
+        "item": "loan",
+        "quantity": 1.0,
+        "currency": "UGX",
+        "transaction_date": "2026-05-27",
+        "confidence": 0.3
+      },
+      "matches": {
+        "intent": true,
+        "amount": true,
+        "item": true,
+        "quantity": true
+      }
+    },
+    {
+      "input": "Sold dress 45k",
+      "expected": {
+        "intent": "sale",
+        "amount": 45000,
+        "item": "dress",
+        "quantity": 1
+      },
+      "actual": {
+        "intent": "sale",
+        "amount": 45000.0,
+        "item": "dress",
+        "quantity": 1.0,
+        "currency": "UGX",
+        "transaction_date": "2026-05-27",
+        "confidence": 0.3
+      },
+      "matches": {
+        "intent": true,
+        "amount": true,
+        "item": true,
+        "quantity": true
+      }
+    },
+    {
+      "input": "Bought 3m of fabric 90k",
+      "expected": {
+        "intent": "expense",
+        "amount": 90000,
+        "item": "fabric",
+        "quantity": 3
+      },
+      "actual": {
+        "intent": "expense",
+        "amount": 90000.0,
+        "item": "m",
+        "quantity": 1.0,
+        "currency": "UGX",
+        "transaction_date": "2026-05-27",
+        "confidence": 0.3
+      },
+      "matches": {
+        "intent": true,
+        "amount": true,
+        "item": false,
+        "quantity": false
+      }
+    },
+    {
+      "input": "Paid for parking 2000",
+      "expected": {
+        "intent": "expense",
+        "amount": 2000,
+        "item": "parking",
+        "quantity": 1
+      },
+      "actual": {
+        "intent": "expense",
+        "amount": 2000.0,
+        "item": "parking",
+        "quantity": 1.0,
+        "currency": "UGX",
+        "transaction_date": "2026-05-27",
+        "confidence": 0.3
+      },
+      "matches": {
+        "intent": true,
+        "amount": true,
+        "item": true,
+        "quantity": true
+      }
+    },
+    {
+      "input": "Sold juice 2500",
+      "expected": {
+        "intent": "sale",
+        "amount": 2500,
+        "item": "juice",
+        "quantity": 1
+      },
+      "actual": {
+        "intent": "sale",
+        "amount": 2500.0,
+        "item": "juice",
+        "quantity": 1.0,
+        "currency": "UGX",
+        "transaction_date": "2026-05-27",
+        "confidence": 0.3
+      },
+      "matches": {
+        "intent": true,
+        "amount": true,
+        "item": true,
+        "quantity": true
+      }
+    },
+    {
+      "input": "Bought 2 pens 1000",
+      "expected": {
+        "intent": "expense",
+        "amount": 1000,
+        "item": "pens",
+        "quantity": 2
+      },
+      "actual": {
+        "intent": "expense",
+        "amount": 1000.0,
+        "item": "pens",
+        "quantity": 1.0,
+        "currency": "UGX",
+        "transaction_date": "2026-05-27",
+        "confidence": 0.3
+      },
+      "matches": {
+        "intent": true,
+        "amount": true,
+        "item": true,
+        "quantity": false
+      }
+    },
+    {
+      "input": "Paid data 5000",
+      "expected": {
+        "intent": "expense",
+        "amount": 5000,
+        "item": "data",
+        "quantity": 1
+      },
+      "actual": {
+        "intent": "expense",
+        "amount": 5000.0,
+        "item": "unknown",
+        "quantity": 1.0,
+        "currency": "UGX",
+        "transaction_date": "2026-05-27",
+        "confidence": 0.3
+      },
+      "matches": {
+        "intent": true,
+        "amount": true,
+        "item": false,
+        "quantity": true
+      }
+    },
+    {
+      "input": "Stock check 5 watches",
+      "expected": {
+        "intent": "inventory",
+        "amount": 0,
+        "item": "watches",
+        "quantity": 5
+      },
+      "actual": {
+        "intent": "inventory",
+        "amount": 0.0,
+        "item": "watches",
+        "quantity": 1.0,
+        "currency": "UGX",
+        "transaction_date": "2026-05-27",
+        "confidence": 0.3
+      },
+      "matches": {
+        "intent": true,
+        "amount": true,
+        "item": true,
+        "quantity": false
+      }
+    },
+    {
+      "input": "Sold watch 150k",
+      "expected": {
+        "intent": "sale",
+        "amount": 150000,
+        "item": "watch",
+        "quantity": 1
+      },
+      "actual": {
+        "intent": "sale",
+        "amount": 150000.0,
+        "item": "watch",
+        "quantity": 1.0,
+        "currency": "UGX",
+        "transaction_date": "2026-05-27",
+        "confidence": 0.3
+      },
+      "matches": {
+        "intent": true,
+        "amount": true,
+        "item": true,
+        "quantity": true
+      }
+    },
+    {
+      "input": "Bought battery 5000",
+      "expected": {
+        "intent": "expense",
+        "amount": 5000,
+        "item": "battery",
+        "quantity": 1
+      },
+      "actual": {
+        "intent": "expense",
+        "amount": 5000.0,
+        "item": "battery",
+        "quantity": 1.0,
+        "currency": "UGX",
+        "transaction_date": "2026-05-27",
+        "confidence": 0.3
+      },
+      "matches": {
+        "intent": true,
+        "amount": true,
+        "item": true,
+        "quantity": true
+      }
+    },
+    {
+      "input": "Paid for repairs 30k",
+      "expected": {
+        "intent": "expense",
+        "amount": 30000,
+        "item": "repairs",
+        "quantity": 1
+      },
+      "actual": {
+        "intent": "expense",
+        "amount": 30000.0,
+        "item": "repairs",
+        "quantity": 1.0,
+        "currency": "UGX",
+        "transaction_date": "2026-05-27",
+        "confidence": 0.3
+      },
+      "matches": {
+        "intent": true,
+        "amount": true,
+        "item": true,
+        "quantity": true
+      }
+    },
+    {
+      "input": "Sold 5 books 45k",
+      "expected": {
+        "intent": "sale",
+        "amount": 45000,
+        "item": "books",
+        "quantity": 5
+      },
+      "actual": {
+        "intent": "sale",
+        "amount": 45000.0,
+        "item": "books",
+        "quantity": 1.0,
+        "currency": "UGX",
+        "transaction_date": "2026-05-27",
+        "confidence": 0.3
+      },
+      "matches": {
+        "intent": true,
+        "amount": true,
+        "item": true,
+        "quantity": false
+      }
+    },
+    {
+      "input": "Bought 2 chairs 80k",
+      "expected": {
+        "intent": "expense",
+        "amount": 80000,
+        "item": "chairs",
+        "quantity": 2
+      },
+      "actual": {
+        "intent": "expense",
+        "amount": 80000.0,
+        "item": "chairs",
+        "quantity": 1.0,
+        "currency": "UGX",
+        "transaction_date": "2026-05-27",
+        "confidence": 0.3
+      },
+      "matches": {
+        "intent": true,
+        "amount": true,
+        "item": true,
+        "quantity": false
+      }
+    },
+    {
+      "input": "Paid for delivery 7000",
+      "expected": {
+        "intent": "expense",
+        "amount": 7000,
+        "item": "delivery",
+        "quantity": 1
+      },
+      "actual": {
+        "intent": "expense",
+        "amount": 7000.0,
+        "item": "unknown",
+        "quantity": 1.0,
+        "currency": "UGX",
+        "transaction_date": "2026-05-27",
+        "confidence": 0.3
+      },
+      "matches": {
+        "intent": true,
+        "amount": true,
+        "item": false,
+        "quantity": true
+      }
+    },
+    {
+      "input": "Sold bag 35k",
+      "expected": {
+        "intent": "sale",
+        "amount": 35000,
+        "item": "bag",
+        "quantity": 1
+      },
+      "actual": {
+        "intent": "sale",
+        "amount": 35000.0,
+        "item": "bag",
+        "quantity": 1.0,
+        "currency": "UGX",
+        "transaction_date": "2026-05-27",
+        "confidence": 0.3
+      },
+      "matches": {
+        "intent": true,
+        "amount": true,
+        "item": true,
+        "quantity": true
+      }
+    },
+    {
+      "input": "Bought 3 notebooks 6000",
+      "expected": {
+        "intent": "expense",
+        "amount": 6000,
+        "item": "notebooks",
+        "quantity": 3
+      },
+      "actual": {
+        "intent": "expense",
+        "amount": 6000.0,
+        "item": "notebooks",
+        "quantity": 1.0,
+        "currency": "UGX",
+        "transaction_date": "2026-05-27",
+        "confidence": 0.3
+      },
+      "matches": {
+        "intent": true,
+        "amount": true,
+        "item": true,
+        "quantity": false
+      }
+    },
+    {
+      "input": "Paid for light 12k",
+      "expected": {
+        "intent": "expense",
+        "amount": 12000,
+        "item": "light",
+        "quantity": 1
+      },
+      "actual": {
+        "intent": "expense",
+        "amount": 12000.0,
+        "item": "light",
+        "quantity": 1.0,
+        "currency": "UGX",
+        "transaction_date": "2026-05-27",
+        "confidence": 0.3
+      },
+      "matches": {
+        "intent": true,
+        "amount": true,
+        "item": true,
+        "quantity": true
+      }
+    },
+    {
+      "input": "Stock now 12 hats",
+      "expected": {
+        "intent": "inventory",
+        "amount": 0,
+        "item": "hats",
+        "quantity": 12
+      },
+      "actual": {
+        "intent": "inventory",
+        "amount": 0.0,
+        "item": "hats",
+        "quantity": 1.0,
+        "currency": "UGX",
+        "transaction_date": "2026-05-27",
+        "confidence": 0.3
+      },
+      "matches": {
+        "intent": true,
+        "amount": true,
+        "item": true,
+        "quantity": false
+      }
+    },
+    {
+      "input": "Sold hat 8k",
+      "expected": {
+        "intent": "sale",
+        "amount": 8000,
+        "item": "hat",
+        "quantity": 1
+      },
+      "actual": {
+        "intent": "sale",
+        "amount": 8000.0,
+        "item": "hat",
+        "quantity": 1.0,
+        "currency": "UGX",
+        "transaction_date": "2026-05-27",
+        "confidence": 0.3
+      },
+      "matches": {
+        "intent": true,
+        "amount": true,
+        "item": true,
+        "quantity": true
+      }
+    },
+    {
+      "input": "Bought 5 shirts 100k",
+      "expected": {
+        "intent": "expense",
+        "amount": 100000,
+        "item": "shirts",
+        "quantity": 5
+      },
+      "actual": {
+        "intent": "expense",
+        "amount": 100000.0,
+        "item": "shirts",
+        "quantity": 1.0,
+        "currency": "UGX",
+        "transaction_date": "2026-05-27",
+        "confidence": 0.3
+      },
+      "matches": {
+        "intent": true,
+        "amount": true,
+        "item": true,
+        "quantity": false
+      }
+    },
+    {
+      "input": "Paid for tea 2000",
+      "expected": {
+        "intent": "expense",
+        "amount": 2000,
+        "item": "tea",
+        "quantity": 1
+      },
+      "actual": {
+        "intent": "expense",
+        "amount": 2000.0,
+        "item": "tea",
+        "quantity": 1.0,
+        "currency": "UGX",
+        "transaction_date": "2026-05-27",
+        "confidence": 0.3
+      },
+      "matches": {
+        "intent": true,
+        "amount": true,
+        "item": true,
+        "quantity": true
+      }
+    },
+    {
+      "input": "Sold 2 plates of food 15k",
+      "expected": {
+        "intent": "sale",
+        "amount": 15000,
+        "item": "food",
+        "quantity": 2
+      },
+      "actual": {
+        "intent": "sale",
+        "amount": 15000.0,
+        "item": "plates",
+        "quantity": 1.0,
+        "currency": "UGX",
+        "transaction_date": "2026-05-27",
+        "confidence": 0.3
+      },
+      "matches": {
+        "intent": true,
+        "amount": true,
+        "item": false,
+        "quantity": false
+      }
+    },
+    {
+      "input": "Bought 1kg meat 14k",
+      "expected": {
+        "intent": "expense",
+        "amount": 14000,
+        "item": "meat",
+        "quantity": 1
+      },
+      "actual": {
+        "intent": "expense",
+        "amount": 14000.0,
+        "item": "kg",
+        "quantity": 1.0,
+        "currency": "UGX",
+        "transaction_date": "2026-05-27",
+        "confidence": 0.3
+      },
+      "matches": {
+        "intent": true,
+        "amount": true,
+        "item": false,
+        "quantity": true
+      }
+    },
+    {
+      "input": "Paid for charcoal 10k",
+      "expected": {
+        "intent": "expense",
+        "amount": 10000,
+        "item": "charcoal",
+        "quantity": 1
+      },
+      "actual": {
+        "intent": "expense",
+        "amount": 10000.0,
+        "item": "k",
+        "quantity": 1.0,
+        "currency": "UGX",
+        "transaction_date": "2026-05-27",
+        "confidence": 0.3
+      },
+      "matches": {
+        "intent": true,
+        "amount": true,
+        "item": false,
+        "quantity": true
+      }
+    },
+    {
+      "input": "Sold 3 sodas 6k",
+      "expected": {
+        "intent": "sale",
+        "amount": 6000,
+        "item": "sodas",
+        "quantity": 3
+      },
+      "actual": {
+        "intent": "sale",
+        "amount": 6000.0,
+        "item": "sodas",
+        "quantity": 1.0,
+        "currency": "UGX",
+        "transaction_date": "2026-05-27",
+        "confidence": 0.3
+      },
+      "matches": {
+        "intent": true,
+        "amount": true,
+        "item": true,
+        "quantity": false
+      }
+    },
+    {
+      "input": "Bought 10kg beans 40k",
+      "expected": {
+        "intent": "expense",
+        "amount": 40000,
+        "item": "beans",
+        "quantity": 10
+      },
+      "actual": {
+        "intent": "expense",
+        "amount": 40000.0,
+        "item": "kg",
+        "quantity": 10.0,
+        "currency": "UGX",
+        "transaction_date": "2026-05-27",
+        "confidence": 0.3
+      },
+      "matches": {
+        "intent": true,
+        "amount": true,
+        "item": false,
+        "quantity": true
+      }
+    },
+    {
+      "input": "Paid for airtime 5000",
+      "expected": {
+        "intent": "expense",
+        "amount": 5000,
+        "item": "airtime",
+        "quantity": 1
+      },
+      "actual": {
+        "intent": "expense",
+        "amount": 5000.0,
+        "item": "unknown",
+        "quantity": 1.0,
+        "currency": "UGX",
+        "transaction_date": "2026-05-27",
+        "confidence": 0.3
+      },
+      "matches": {
+        "intent": true,
+        "amount": true,
+        "item": false,
+        "quantity": true
+      }
+    },
+    {
+      "input": "Sold 2 pairs of socks 10k",
+      "expected": {
+        "intent": "sale",
+        "amount": 10000,
+        "item": "socks",
+        "quantity": 2
+      },
+      "actual": {
+        "intent": "sale",
+        "amount": 10000.0,
+        "item": "pairs",
+        "quantity": 2.0,
+        "currency": "UGX",
+        "transaction_date": "2026-05-27",
+        "confidence": 0.3
+      },
+      "matches": {
+        "intent": true,
+        "amount": true,
+        "item": false,
+        "quantity": true
+      }
+    }
+  ]
+}
