@@ -17,6 +17,7 @@ ACCESS_TOKEN_EXPIRE_MINUTES=1440
 
 # AI Services
 GEMINI_API_KEY=your_gemini_api_key_here
+EXCHANGERATE_API_KEY=your_exchangerate_api_key_here
 
 # Payment Integrations
 MTN_UG_API_KEY=your_mtn_key

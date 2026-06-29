@@ -13,6 +13,9 @@ class TransactionBase(BaseModel):
     description: Optional[str] = None
     quantity: Decimal = 1.0
     transaction_date: Optional[datetime] = None
+    original_amount: Optional[Decimal] = None
+    original_currency: Optional[str] = None
+    exchange_rate: Optional[Decimal] = None
 
 class TransactionCreate(TransactionBase):
     pass

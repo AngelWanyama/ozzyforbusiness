@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     POSTGRES_DB: str = "ozzy"
     DATABASE_URL: Optional[str] = None
     GEMINI_API_KEY: Optional[str] = None
+    EXCHANGERATE_API_KEY: Optional[str] = None
     
     # Security
     SECRET_KEY: str = "super-secret-key-change-this-in-production"
