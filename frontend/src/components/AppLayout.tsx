@@ -1,5 +1,5 @@
 import { NavLink, Outlet } from 'react-router-dom';
-import { LayoutDashboard, MessageSquare, History, BarChart3, Settings, Moon, Sun } from 'lucide-react';
+import { LayoutDashboard, MessageSquare, History, FileText, BarChart3, Settings, Moon, Sun } from 'lucide-react';
 import { useState } from 'react';
 
 export default function AppLayout() {
@@ -44,6 +44,9 @@ export default function AppLayout() {
           </NavLink>
           <NavLink to="/transactions" className={linkClass}>
             <History size={20} /><span>History</span>
+          </NavLink>
+          <NavLink to="/invoices" className={linkClass}>
+            <FileText size={20} /><span>Invoices</span>
           </NavLink>
           <NavLink to="/reports" className={linkClass}>
             <BarChart3 size={20} /><span>Reports</span>

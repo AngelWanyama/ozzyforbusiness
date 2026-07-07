@@ -8,6 +8,7 @@ import Chat from './pages/Chat';
 import Transactions from './pages/Transactions';
 import Inventory from './pages/Inventory';
 import Reports from './pages/Reports';
+import Invoices from './pages/Invoices';
 import Settings from './pages/Settings';
 
 export default function App() {
@@ -22,6 +23,7 @@ export default function App() {
             <Route path="chat" element={<Chat />} />
             <Route path="transactions" element={<Transactions />} />
             <Route path="inventory" element={<Inventory />} />
+            <Route path="invoices" element={<Invoices />} />
             <Route path="reports" element={<Reports />} />
             <Route path="settings" element={<Settings />} />
           </Route>
