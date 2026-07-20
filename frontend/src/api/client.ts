@@ -91,6 +91,35 @@ class ApiClient {
     return this.request(`/inventory/${id}/adjust-stock`, { method: 'POST', body: JSON.stringify({ adjustment_amount: amount }) });
   }
 
+  // === Invoices (Full CRUD + Generate + PDF) ===
+  async getInvoices(skip = 0, limit = 100) {
+    return this.request<any[]>(`/invoices?skip=${skip}&limit=${limit}`);
+  }
+
+  async getInvoice(id: string) {
+    return this.request<any>(`/invoices/${id}`);
+  }
+
+  async generateInvoiceFromText(text: string) {
+    return this.request<any>('/invoices/generate', { method: 'POST', body: JSON.stringify({ text }) });
+  }
+
+  async updateInvoice(id: string, data: any) {
+    return this.request(`/invoices/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+  }
+
+  async deleteInvoice(id: string) {
+    return this.request(`/invoices/${id}`, { method: 'DELETE' });
+  }
+
+  async getInvoicePdf(id: string) {
+    const token = this.getToken();
+    const res = await fetch(`${this.baseUrl}/invoices/${id}/pdf`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    return res;
+  }
+
   // === Users ===
   async getUserPlan() {
     return this.request<any>('/users/plan');
