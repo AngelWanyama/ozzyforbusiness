@@ -17,6 +17,15 @@ class Settings(BaseSettings):
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7 # 1 week
 
+    # Payment Integrations
+    MTN_UG_API_KEY: Optional[str] = None
+    MTN_UG_USER_ID: Optional[str] = None
+    MTN_UG_SUBSCRIPTION_KEY: Optional[str] = None
+    AIRTEL_UG_CLIENT_ID: Optional[str] = None
+    AIRTEL_UG_CLIENT_SECRET: Optional[str] = None
+    FLUTTERWAVE_SECRET_KEY: Optional[str] = None
+    FLUTTERWAVE_PUBLIC_KEY: Optional[str] = None
+
     @property
     def async_database_url(self) -> str:
         if self.DATABASE_URL:
