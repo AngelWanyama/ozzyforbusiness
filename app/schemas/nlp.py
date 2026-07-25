@@ -6,6 +6,7 @@ class NLPTransactionResponse(BaseModel):
     intent: str = Field(..., description="One of 'sale', 'expense', 'inventory', or 'query'")
     amount: float = Field(0.0, description="The monetary value of the transaction")
     item: str = Field("unknown", description="The item or service involved")
+    category: str = Field("Other", description="One of 'Sales Revenue', 'Utilities', 'Transport', 'Rent', 'Supplies', 'Salaries', 'Marketing', 'Equipment', 'Other'")
     quantity: float = Field(1.0, description="The quantity of the item")
     currency: str = Field("UGX", description="The currency code")
     transaction_date: date = Field(default_factory=date.today, description="The date of the transaction")
