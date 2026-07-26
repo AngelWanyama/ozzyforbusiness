@@ -1,26 +1,17 @@
 import json
 from typing import Dict, Any, Optional
 from datetime import datetime
-from app.core.config import settings
 from app.schemas.nlp import NLPTransactionResponse
-import google.generativeai as genai
+from app.services.ai_client import ai_client
 
 class NLPParserService:
-    def __init__(self):
-        # Configure Gemini
-        if hasattr(settings, 'GEMINI_API_KEY') and settings.GEMINI_API_KEY and settings.GEMINI_API_KEY != "your_gemini_api_key_here":
-            genai.configure(api_key=settings.GEMINI_API_KEY)
-            self.model = genai.GenerativeModel('gemini-2.0-flash')
-        else:
-            self.model = None
-
     async def parse_transaction(self, text: str, user_currency: str = "UGX") -> NLPTransactionResponse:
         """
         Parses raw text into a structured transaction object using LLM.
         user_currency: the logged-in user's preferred currency, used as the default
         when no currency is mentioned in the text itself.
         """
-        if not self.model:
+        if not ai_client.is_available:
             # Fallback logic if LLM is not configured
             return NLPTransactionResponse(**self._fallback_parse(text, user_currency))
 
@@ -67,10 +58,11 @@ class NLPParserService:
         Only return the JSON. No preamble.
         """
 
+        result_text = ai_client.generate(prompt, json_mode=True)
+        if result_text is None:
+            return NLPTransactionResponse(**self._fallback_parse(text, user_currency))
+
         try:
-            response = self.model.generate_content(prompt)
-            result_text = response.text.strip()
-            
             # Clean up potential markdown code blocks
             if result_text.startswith("```json"):
                 result_text = result_text[7:-3].strip()
@@ -80,7 +72,7 @@ class NLPParserService:
             parsed_json = json.loads(result_text)
             return NLPTransactionResponse(**parsed_json)
         except Exception as e:
-            print(f"Error calling LLM: {e}")
+            print(f"Error parsing LLM response: {e}")
             return NLPTransactionResponse(**self._fallback_parse(text, user_currency))
 
     def _fallback_parse(self, text: str, user_currency: str = "UGX") -> Dict[str, Any]:

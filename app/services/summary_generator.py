@@ -6,17 +6,9 @@ from sqlalchemy import select, and_
 from app.models.user import User, PlanType
 from app.models.transaction import Transaction, TransactionType
 from app.models.summary import Summary, SummaryType
-from app.core.config import settings
-import google.generativeai as genai
+from app.services.ai_client import ai_client
 
 class SummaryGenerator:
-    def __init__(self):
-        if hasattr(settings, 'GEMINI_API_KEY') and settings.GEMINI_API_KEY and settings.GEMINI_API_KEY != "your_gemini_api_key_here":
-            genai.configure(api_key=settings.GEMINI_API_KEY)
-            self.model = genai.GenerativeModel('gemini-1.5-flash')
-        else:
-            self.model = None
-
     async def generate_daily_summaries(self, db: AsyncSession):
         # Generate summaries for yesterday
         yesterday = datetime.utcnow().date() - timedelta(days=1)
@@ -112,8 +104,13 @@ class SummaryGenerator:
         await db.commit()
 
     async def _get_ai_summary(self, data: dict) -> str:
-        if not self.model:
-            return f"You made {data['sale_count']} sales totaling {data['currency']} {data['total_sales']:,}. Your expenses were {data['currency']} {data['total_expenses']:,}. Your profit was {data['currency']} {data['net_profit']:,}."
+        fallback = (
+            f"You made {data['sale_count']} sales totaling {data['currency']} {data['total_sales']:,}. "
+            f"Your expenses were {data['currency']} {data['total_expenses']:,}. "
+            f"Your profit was {data['currency']} {data['net_profit']:,}."
+        )
+        if not ai_client.is_available:
+            return fallback
 
         prompt = f"""
         You are a business coach for 'Ozzy for Business', helping small business owners in Africa.
@@ -127,12 +124,8 @@ class SummaryGenerator:
         Write a 2-sentence summary in plain, encouraging language. Mention the profit clearly.
         If it's a daily summary, start with "Today..." or "Yesterday...".
         """
-        
-        try:
-            response = self.model.generate_content(prompt)
-            return response.text.strip()
-        except Exception as e:
-            print(f"Error calling LLM for summary: {e}")
-            return f"You made {data['sale_count']} sales totaling {data['currency']} {data['total_sales']:,}. Profit: {data['currency']} {data['net_profit']:,}."
+
+        result = ai_client.generate(prompt)
+        return result if result is not None else fallback
 
 summary_generator = SummaryGenerator()

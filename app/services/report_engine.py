@@ -14,21 +14,13 @@ from app.schemas.report import (
     CashFlowReport, AccountingReport, RevenueBreakdown, 
     ExpenseBreakdown, AssetBreakdown, LiabilityBreakdown
 )
-import google.generativeai as genai
+from app.services.ai_client import ai_client
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 from reportlab.lib import colors
 from reportlab.lib.units import inch
 
 class ReportEngineService:
-    def __init__(self):
-        # Configure Gemini
-        if hasattr(settings, 'GEMINI_API_KEY') and settings.GEMINI_API_KEY and settings.GEMINI_API_KEY != "your_gemini_api_key_here":
-            genai.configure(api_key=settings.GEMINI_API_KEY)
-            self.model = genai.GenerativeModel('gemini-1.5-flash')
-        else:
-            self.model = None
-
     async def get_pnl_report(
         self, db: AsyncSession, user: User, start_date: datetime, end_date: datetime
     ) -> PNLReport:
@@ -182,8 +174,8 @@ class ReportEngineService:
         )
 
     async def generate_ai_summary(self, report_type: ReportType, data: Dict, user_name: str) -> str:
-        if not self.model:
-            return "AI summary is not available at the moment. Please configure the GEMINI_API_KEY."
+        if not ai_client.is_available:
+            return "AI summary is not available at the moment. Please configure the GROQ_API_KEY."
 
         prompt = f"""
         You are a financial advisor for 'Ozzy for Business', helping small business owners in Africa understand their financial reports.
@@ -197,12 +189,8 @@ class ReportEngineService:
         Mention the specific currency used in the data.
         """
 
-        try:
-            response = self.model.generate_content(prompt)
-            return response.text.strip()
-        except Exception as e:
-            print(f"Error generating AI summary: {e}")
-            return "Unable to generate AI summary at this time."
+        result = ai_client.generate(prompt)
+        return result if result is not None else "Unable to generate AI summary at this time."
 
     def export_to_pdf(self, report_type: ReportType, data: Dict, summary: str, user: User) -> bytes:
         buffer = io.BytesIO()
