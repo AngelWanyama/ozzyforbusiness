@@ -10,5 +10,5 @@ python-dotenv
 python-multipart
 python-jose[cryptography]
 passlib[bcrypt]
-google-generativeai
+groq
 reportlab

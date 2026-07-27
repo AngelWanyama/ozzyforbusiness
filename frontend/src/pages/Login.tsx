@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { Phone, ShieldCheck, ArrowLeft } from 'lucide-react';
+import ozzyLogo from '../assets/ozzy-logo.png';
 
 export default function Login() {
   const [step, setStep] = useState<'phone' | 'otp'>('phone');
@@ -43,10 +44,10 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-[#FEF7ED] to-white dark:from-gray-900 dark:to-gray-950 p-4">
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-white to-[#F9FAFB] dark:from-gray-900 dark:to-gray-950 p-4">
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
-          <div className="w-20 h-20 bg-[#0D9488] rounded-2xl flex items-center justify-center text-4xl mx-auto mb-4 shadow-lg">🦉</div>
+          <img src={ozzyLogo} alt="Ozzy Africa Technologies" className="h-16 mx-auto mb-4" />
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Ozzy for Business</h1>
           <p className="text-gray-500 dark:text-gray-400 mt-1">Track your business finances the easy way</p>
         </div>
@@ -59,10 +60,10 @@ export default function Login() {
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Phone Number</label>
               <div className="relative">
                 <Phone size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                <input type="tel" className="w-full pl-10 pr-4 py-3 border border-gray-200 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-800 dark:text-white focus:ring-2 focus:ring-[#0D9488] focus:border-transparent outline-none transition" placeholder="+256 7XX XXX XXX" value={phone} onChange={e => setPhone(e.target.value)} required autoFocus />
+                <input type="tel" className="w-full pl-10 pr-4 py-3 border border-gray-200 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-800 dark:text-white focus:ring-2 focus:ring-[#3F0071] focus:border-transparent outline-none transition" placeholder="+256 7XX XXX XXX" value={phone} onChange={e => setPhone(e.target.value)} required autoFocus />
               </div>
             </div>
-            <button type="submit" disabled={loading} className="w-full py-3 bg-[#0D9488] hover:bg-[#0B7A70] text-white font-semibold rounded-xl transition disabled:opacity-50">
+            <button type="submit" disabled={loading} className="w-full py-3 bg-[#3F0071] hover:bg-[#2E0054] text-white font-semibold rounded-xl transition disabled:opacity-50">
               {loading ? 'Sending...' : 'Send Code'}
             </button>
           </form>
@@ -73,7 +74,7 @@ export default function Login() {
             </div>
             <div className="flex gap-2 justify-center">
               {otp.map((d, i) => (
-                <input key={i} id={`otp-${i}`} type="text" className="w-12 h-14 text-center text-xl font-bold border-2 border-gray-200 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-800 dark:text-white focus:ring-2 focus:ring-[#0D9488] focus:border-transparent outline-none transition" maxLength={1} value={d} onChange={e => handleOtpChange(i, e.target.value)} autoFocus={i === 0} />
+                <input key={i} id={`otp-${i}`} type="text" className="w-12 h-14 text-center text-xl font-bold border-2 border-gray-200 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-800 dark:text-white focus:ring-2 focus:ring-[#3F0071] focus:border-transparent outline-none transition" maxLength={1} value={d} onChange={e => handleOtpChange(i, e.target.value)} autoFocus={i === 0} />
               ))}
             </div>
             {debugCode && (
@@ -82,7 +83,7 @@ export default function Login() {
                 <span className="text-xs">(In production, sent via SMS)</span>
               </div>
             )}
-            <button type="submit" disabled={loading} className="w-full py-3 bg-[#0D9488] hover:bg-[#0B7A70] text-white font-semibold rounded-xl transition disabled:opacity-50">
+            <button type="submit" disabled={loading} className="w-full py-3 bg-[#3F0071] hover:bg-[#2E0054] text-white font-semibold rounded-xl transition disabled:opacity-50">
               {loading ? 'Verifying...' : 'Verify & Login'}
             </button>
             <button type="button" onClick={() => { setStep('phone'); setOtp(['', '', '', '', '', '']); setError(''); }} className="w-full py-3 text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition flex items-center justify-center gap-1">
