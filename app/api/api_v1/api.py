@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from app.api.api_v1.endpoints import chat, transactions, reports, auth, inventory, accounting, users, summaries, payments, invoices, receipts, settings
+from app.api.api_v1.endpoints import chat, transactions, reports, auth, inventory, accounting, users, summaries, payments, invoices, receipts, settings, business_profile
 
 api_router = APIRouter()
 api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
@@ -14,3 +14,4 @@ api_router.include_router(payments.router, prefix="/payments", tags=["payments"]
 api_router.include_router(invoices.router, prefix="/invoices", tags=["invoices"])
 api_router.include_router(receipts.router, prefix="/receipts", tags=["receipts"])
 api_router.include_router(settings.router, prefix="/settings", tags=["settings"])
+api_router.include_router(business_profile.router, prefix="/business-profile", tags=["business-profile"])

@@ -7,3 +7,4 @@ from app.models.summary import Summary
 from app.models.payment import Payment
 from app.models.invoice import Invoice, InvoiceItem
 from app.models.category_correction import CategoryCorrection
+from app.models.business_profile import BusinessProfile

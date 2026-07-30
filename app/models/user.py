@@ -24,5 +24,7 @@ class User(Base):
     last_transaction_at = Column(DateTime, nullable=True)
     payment_expiry_date = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
-
+    
     payments = relationship("Payment", back_populates="user", cascade="all, delete-orphan")
+    business_profile = relationship("BusinessProfile", back_populates="user", uselist=False, cascade="all, delete-orphan")
+

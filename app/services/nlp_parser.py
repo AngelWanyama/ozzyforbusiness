@@ -66,7 +66,7 @@ class NLPParserService:
 
     async def parse_invoice(self, text: str) -> Dict[str, Any]:
         """
-        Parses raw text into structured invoice data.
+        Parses raw text into structured invoice data using LLM.
         """
         if not self.model:
              return self._fallback_invoice_parse(text)
@@ -79,14 +79,27 @@ class NLPParserService:
         Current Date: {datetime.now().strftime('%Y-%m-%d')}
         
         Return a JSON object with the following fields:
-        - customer_name: Name of the customer.
+        - customer_name: Name of the customer (required).
+        - customer_company: Company name of the customer if mentioned.
+        - customer_phone: Phone number of the customer if mentioned.
+        - customer_email: Email address of the customer if mentioned.
+        - customer_address: Physical address of the customer if mentioned.
         - items: A list of objects, each with:
-            - description: Name of the item or service.
+            - name: Name of the item or service (required).
+            - description: Brief description if any.
             - quantity: Number of units (default 1).
             - unit_price: Price per unit.
-        - notes: Any additional notes (default null).
+            - discount_pct: Discount percentage for this item (default 0).
+            - tax_pct: Tax percentage for this item (default 0).
+        - payment_method: An object with 'type' (e.g., "Mobile Money", "Cash", "Bank Transfer") and 'instructions'.
+        - notes: Any additional notes.
         - due_date: ISO 8601 format (YYYY-MM-DD) (default to 7 days from now if not specified).
         - currency: Currency code (default "UGX").
+
+        Rules:
+        1. Parse currency amounts with local format support (e.g., "120,000" and "120000" are both 120000).
+        2. If the user mentions "each" or "@", use that as the unit_price.
+        3. If no customer name is found, use "Walk-in Customer".
 
         Only return the JSON. No preamble.
         """
@@ -107,101 +120,88 @@ class NLPParserService:
 
     def _fallback_invoice_parse(self, text: str) -> Dict[str, Any]:
         """
-        Simple extraction for invoice creation text.
+        Simple extraction for invoice creation text when LLM is unavailable.
         """
         import re
         customer_name = "Walk-in Customer"
+        customer_company = None
         items = []
+        payment_method = {"type": "Cash", "instructions": "Pay on delivery"}
         
-        # Look for "for [Name]"
-        name_match = re.search(r'for\s+([A-Z][a-z]+)', text)
+        # Look for customer name after "for "
+        name_match = re.search(r'for\s+([A-Z][a-zA-Z\s]+?)(?:\.|\s+at|\s+,|\s+with|$)', text)
         if name_match:
-            customer_name = name_match.group(1)
+            customer_name = name_match.group(1).strip()
             
-        # Look for numbers
-        numbers = re.findall(r'(\d[\d,.]*)', text)
-        amount = 0
-        if numbers:
-            amount = float(numbers[-1].replace(',', ''))
-            
-        description = "Service/Product"
-        # Try to find description between name and amount
-        if name_match and numbers:
-             start = name_match.end()
-             end = text.find(numbers[-1])
-             if end > start:
-                 desc = text[start:end].strip(', ').strip()
-                 if desc:
-                     description = desc
+        # Basic check for common payment methods
+        if re.search(r'mobile\s+money|m-pesa|mtn|airtel', text.lower()):
+            payment_method = {"type": "Mobile Money", "instructions": "Pay to business number"}
+        elif re.search(r'bank|transfer', text.lower()):
+            payment_method = {"type": "Bank Transfer", "instructions": "See bank details below"}
 
-        items.append({
-            "description": description,
-            "quantity": 1.0,
-            "unit_price": amount
-        })
+        # Attempt to split into items if multiple sentences or commas
+        parts = re.split(r'\.|\n|,', text)
+        for part in parts:
+            part = part.strip()
+            if not part or any(kw in part.lower() for kw in ["invoice", "create", "for"]):
+                continue
+                
+            # Extract number and possible "each"
+            numbers = re.findall(r'(\d[\d,.]*)', part)
+            if not numbers:
+                continue
+                
+            qty = 1.0
+            price = 0.0
+            
+            if len(numbers) >= 2:
+                # Often "qty [item] price each"
+                qty_match = re.search(r'(\d[\d,.]*)\s*(?:bags|litres|kg|items|units|pcs|dresses)', part.lower())
+                if qty_match:
+                    qty = float(qty_match.group(1).replace(',', ''))
+                    # Price is likely the other number
+                    other_nums = [n for n in numbers if n != qty_match.group(1)]
+                    if other_nums:
+                        price = float(other_nums[0].replace(',', ''))
+                else:
+                    qty = float(numbers[0].replace(',', ''))
+                    price = float(numbers[1].replace(',', ''))
+            elif len(numbers) == 1:
+                price = float(numbers[0].replace(',', ''))
+                
+            # Description is words that aren't numbers
+            name = re.sub(r'\d[\d,.]*|each|at|tax|%', '', part).strip()
+            if not name:
+                name = "Item"
+                
+            items.append({
+                "name": name,
+                "description": part,
+                "quantity": qty,
+                "unit_price": price,
+                "discount_pct": 0,
+                "tax_pct": 18 if "tax" in part.lower() else 0
+            })
+
+        if not items:
+            items.append({
+                "name": "General Service/Product",
+                "quantity": 1.0,
+                "unit_price": 0.0
+            })
         
         from datetime import timedelta
         due_date = (datetime.now() + timedelta(days=7)).strftime('%Y-%m-%d')
         
         return {
             "customer_name": customer_name,
+            "customer_company": customer_company,
             "items": items,
+            "payment_method": payment_method,
             "notes": None,
             "due_date": due_date,
             "currency": "UGX"
         }
-
-    async def scan_receipt(self, image_data: bytes, content_type: str = "image/jpeg") -> Dict[str, Any]:
-        """
-        Uses Gemini Vision to extract data from a receipt image.
-        """
-        if not self.model:
-            return {
-                "vendor_name": "Unknown",
-                "total_amount": 0.0,
-                "currency": "UGX",
-                "date": datetime.now().strftime('%Y-%m-%d'),
-                "items": []
-            }
-
-        prompt = """
-        You are an expert at reading business receipts. 
-        Analyze the provided image and extract the following information into a JSON object:
-        - vendor_name: The name of the store or business.
-        - total_amount: The total amount paid.
-        - currency: The currency code (e.g., UGX, KES, USD).
-        - date: The date on the receipt (YYYY-MM-DD).
-        - items: A list of line items, each with 'description', 'quantity', and 'price'.
-
-        Only return the JSON. No preamble or markdown blocks.
-        """
-
-        try:
-            # Prepare image part for Gemini
-            image_part = {
-                "mime_type": content_type,
-                "data": image_data
-            }
-            
-            response = self.model.generate_content([prompt, image_part])
-            result_text = response.text.strip()
-            
-            if result_text.startswith("```json"):
-                result_text = result_text[7:-3].strip()
-            elif result_text.startswith("```"):
-                result_text = result_text[3:-3].strip()
-
-            return json.loads(result_text)
-        except Exception as e:
-            print(f"Error scanning receipt with Gemini: {e}")
-            return {
-                "vendor_name": "Error",
-                "total_amount": 0.0,
-                "currency": "UGX",
-                "date": datetime.now().strftime('%Y-%m-%d'),
-                "items": [],
-                "error": str(e)
-            }
 
     def _fallback_parse(self, text: str) -> Dict[str, Any]:
         """

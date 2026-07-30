@@ -14,3 +14,4 @@ google-generativeai
 reportlab
 email-validator
 httpx
+Pillow
