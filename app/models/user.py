@@ -15,6 +15,7 @@ class User(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     phone_number = Column(String, unique=True, index=True, nullable=False)
+    password_hash = Column(String, nullable=True)  # nullable: users created before this change won't have one yet
     business_name = Column(String, nullable=True)
     business_type = Column(String, nullable=True)
     currency = Column(String, default="UGX")

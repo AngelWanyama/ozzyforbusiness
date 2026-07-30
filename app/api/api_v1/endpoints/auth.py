@@ -4,14 +4,69 @@ from sqlalchemy import select, delete
 from app.api.deps import get_db
 from app.models.otp import OTP as OTPModel
 from app.models.user import User as UserModel
-from app.schemas.auth import OTPRequest, OTPVerify
+from app.schemas.auth import OTPRequest, OTPVerify, RegisterRequest, LoginRequest
 from app.schemas.token import Token
-from app.core.security import create_access_token
+from app.core.security import create_access_token, hash_password, verify_password
 from datetime import datetime, timedelta
 import random
 import uuid
 
 router = APIRouter()
+
+@router.post("/register", response_model=Token, status_code=status.HTTP_201_CREATED)
+async def register(
+    *,
+    db: AsyncSession = Depends(get_db),
+    register_in: RegisterRequest
+):
+    # Check if this phone number is already registered
+    stmt = select(UserModel).where(UserModel.phone_number == register_in.phone_number)
+    result = await db.execute(stmt)
+    existing_user = result.scalars().first()
+
+    if existing_user and existing_user.password_hash:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="An account with this phone number already exists. Please log in instead."
+        )
+
+    if existing_user:
+        # User exists from old OTP flow but has no password yet — set one now
+        existing_user.password_hash = hash_password(register_in.password)
+        user = existing_user
+    else:
+        user = UserModel(
+            id=uuid.uuid4(),
+            phone_number=register_in.phone_number,
+            password_hash=hash_password(register_in.password),
+            currency="UGX"
+        )
+        db.add(user)
+
+    await db.commit()
+    await db.refresh(user)
+
+    access_token = create_access_token(subject=user.id)
+    return {"access_token": access_token, "token_type": "bearer"}
+
+@router.post("/login", response_model=Token)
+async def login(
+    *,
+    db: AsyncSession = Depends(get_db),
+    login_in: LoginRequest
+):
+    stmt = select(UserModel).where(UserModel.phone_number == login_in.phone_number)
+    result = await db.execute(stmt)
+    user = result.scalars().first()
+
+    if not user or not user.password_hash or not verify_password(login_in.password, user.password_hash):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect phone number or password"
+        )
+
+    access_token = create_access_token(subject=user.id)
+    return {"access_token": access_token, "token_type": "bearer"}
 
 @router.post("/otp/request", status_code=status.HTTP_200_OK)
 async def request_otp(
