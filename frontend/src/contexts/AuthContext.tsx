@@ -6,8 +6,8 @@ interface AuthState {
   loading: boolean;
   plan: any | null;
   usage: any | null;
-  login: (phone: string, code: string) => Promise<void>;
-  requestOTP: (phone: string) => Promise<any>;
+  login: (phone: string, password: string) => Promise<void>;
+  register: (phone: string, password: string) => Promise<void>;
   logout: () => void;
   fetchUserData: () => Promise<void>;
 }
@@ -31,15 +31,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     else setLoading(false);
   }, [fetchUserData]);
 
-  const login = async (phone: string, code: string) => {
-    await api.verifyOTP(phone, code);
+  const login = async (phone: string, password: string) => {
+    await api.loginWithPassword(phone, password);
+    await fetchUserData();
+  };
+
+  const register = async (phone: string, password: string) => {
+    await api.register(phone, password);
     await fetchUserData();
   };
 
   const logout = () => { api.clearToken(); setPlan(null); setUsage(null); };
 
   return (
-    <AuthContext.Provider value={{ isAuthenticated: !!api.getToken(), loading, plan, usage, login, requestOTP: api.requestOTP.bind(api), logout, fetchUserData }}>
+    <AuthContext.Provider value={{ isAuthenticated: !!api.getToken(), loading, plan, usage, login, register, logout, fetchUserData }}>
       {children}
     </AuthContext.Provider>
   );

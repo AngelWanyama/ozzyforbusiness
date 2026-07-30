@@ -42,6 +42,22 @@ class ApiClient {
     return data;
   }
 
+  async register(phoneNumber: string, password: string) {
+    const data = await this.request<{ access_token: string; token_type: string }>('/auth/register', {
+      method: 'POST', body: JSON.stringify({ phone_number: phoneNumber, password }),
+    });
+    this.setToken(data.access_token);
+    return data;
+  }
+
+  async loginWithPassword(phoneNumber: string, password: string) {
+    const data = await this.request<{ access_token: string; token_type: string }>('/auth/login', {
+      method: 'POST', body: JSON.stringify({ phone_number: phoneNumber, password }),
+    });
+    this.setToken(data.access_token);
+    return data;
+  }
+
   // === Transactions (Backend: POST + GET only, no PUT/DELETE) ===
   async getTransactions(skip = 0, limit = 200) {
     return this.request<{ total: number; items: any[] }>(`/transactions?skip=${skip}&limit=${limit}`);
