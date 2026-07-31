@@ -64,7 +64,7 @@ export default function Login() {
       } else {
         await register(fullPhone, password);
       }
-      navigate('/dashboard', { replace: true });
+      navigate('/chat', { replace: true });
     } catch (err: any) {
       setError(err.message || 'Something went wrong. Please try again.');
     } finally {

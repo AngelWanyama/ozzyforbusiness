@@ -18,7 +18,7 @@ export default function App() {
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route path="/" element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
-            <Route index element={<Navigate to="/dashboard" replace />} />
+            <Route index element={<Navigate to="/chat" replace />} />
             <Route path="dashboard" element={<Dashboard />} />
             <Route path="chat" element={<Chat />} />
             <Route path="transactions" element={<Transactions />} />
@@ -27,7 +27,7 @@ export default function App() {
             <Route path="reports" element={<Reports />} />
             <Route path="settings" element={<Settings />} />
           </Route>
-          <Route path="*" element={<Navigate to="/dashboard" replace />} />
+          <Route path="*" element={<Navigate to="/chat" replace />} />
         </Routes>
       </AuthProvider>
     </HashRouter>

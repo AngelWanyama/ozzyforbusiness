@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { FileText, Plus, Search, Eye, Copy, Trash2, X, Download, Printer, Share2, Mail, Save, ChevronRight, Check, Loader } from 'lucide-react';
+import { Plus, Search, Eye, Copy, Trash2, X, Download, Printer, Share2, Mail, ChevronRight, Check, Loader } from 'lucide-react';
 import api from '../api/client';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -33,7 +33,7 @@ interface Invoice {
   items: InvoiceItem[];
 }
 
-const TEMPLATES = [
+export const TEMPLATES = [
   { id: 'professional', name: 'Professional', color: 'from-[#0D9488] to-[#0B7A70]', desc: 'Clean teal header, modern layout' },
   { id: 'modern', name: 'Modern', color: 'from-[#1E293B] to-[#334155]', desc: 'Dark header, contemporary style' },
   { id: 'simple', name: 'Simple', color: 'from-gray-100 to-white', desc: 'Minimal, no color accents' },

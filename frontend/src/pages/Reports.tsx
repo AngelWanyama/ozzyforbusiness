@@ -1,165 +1,170 @@
-import { useState } from 'react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line } from 'recharts';
-import api from '../api/client';
-import { useAuth } from '../contexts/AuthContext';
-import { Lock } from 'lucide-react';
+function Icon({ name, className = '', fill = false }: { name: string; className?: string; fill?: boolean }) {
+  return <span className={`material-symbols-outlined ${className}`} style={fill ? { fontVariationSettings: "'FILL' 1" } : undefined}>{name}</span>;
+}
 
-const COLORS = ['#10B981', '#EF4444', '#0D9488', '#F97316', '#6366F1', '#8B5CF6'];
-
-// Sample data for chart preview
-const sampleSalesData = [
-  { day: 'Mon', sales: 85000, expenses: 32000 },
-  { day: 'Tue', sales: 92000, expenses: 28000 },
-  { day: 'Wed', sales: 78000, expenses: 35000 },
-  { day: 'Thu', sales: 105000, expenses: 30000 },
-  { day: 'Fri', sales: 95000, expenses: 25000 },
-  { day: 'Sat', sales: 120000, expenses: 40000 },
-  { day: 'Sun', sales: 65000, expenses: 22000 },
-];
-
-const sampleExpenseBreakdown = [
-  { name: 'Rent', value: 150000 },
-  { name: 'Supplies', value: 85000 },
-  { name: 'Utilities', value: 45000 },
-  { name: 'Transport', value: 35000 },
-  { name: 'Other', value: 25000 },
-];
-
-const sampleProfitTrend = [
-  { month: 'Jan', profit: 52000 },
-  { month: 'Feb', profit: 48000 },
-  { month: 'Mar', profit: 61000 },
-  { month: 'Apr', profit: 55000 },
-  { month: 'May', profit: 73000 },
-  { month: 'Jun', profit: 68000 },
+const bars = [
+  { d: 'Mon', h: '60%', c: 'bg-primary' },
+  { d: 'Tue', h: '45%', c: 'bg-primary' },
+  { d: 'Wed', h: '80%', c: 'bg-primary' },
+  { d: 'Thu', h: '35%', c: 'bg-primary' },
+  { d: 'Fri', h: '95%', c: 'bg-primary-container/40' },
+  { d: 'Sat', h: '70%', c: 'bg-primary' },
+  { d: 'Sun', h: '55%', c: 'bg-primary' },
 ];
 
 export default function Reports() {
-  const { plan } = useAuth();
-  const [tab, setTab] = useState('sales');
-  const isPaid = plan?.plan_type === 'PAID';
-
-  const fmt = (n: number) => 'UGX ' + Number(n).toLocaleString();
-
-  if (!isPaid) {
-    return (
-      <div className="text-center py-16">
-        <div className="w-16 h-16 bg-gray-100 dark:bg-gray-800 rounded-2xl flex items-center justify-center mx-auto mb-4">
-          <Lock size={28} className="text-gray-400" />
-        </div>
-        <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-2">Premium Feature</h2>
-        <p className="text-gray-500 dark:text-gray-400 text-sm mb-4 max-w-sm mx-auto">
-          Detailed analytics and chart reports are available on the Pro plan.
-        </p>
-        <a href="#/settings" className="inline-block px-6 py-2.5 bg-[#F97316] text-white font-semibold rounded-xl hover:bg-[#E8630A] transition">
-          Upgrade Now
-        </a>
-      </div>
-    );
-  }
-
   return (
-    <div>
-      <h1 className="text-xl font-bold text-gray-900 dark:text-white mb-4">How's My Business?</h1>
-
-      {/* Tabs */}
-      <div className="flex gap-1 mb-6 bg-gray-100 dark:bg-gray-800 p-1 rounded-xl">
-        {['sales', 'expenses', 'profit', 'products'].map(t => (
-          <button key={t} onClick={() => setTab(t)} className={`flex-1 py-2 text-sm font-medium rounded-lg transition ${tab === t ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'}`}>
-            {t === 'sales' ? 'Sales' : t === 'expenses' ? 'Expenses' : t === 'profit' ? 'Profit' : 'Products'}
-          </button>
-        ))}
-      </div>
-
-      {tab === 'sales' && (
-        <div className="bg-white dark:bg-gray-800 rounded-2xl p-5 border border-gray-100 dark:border-gray-700 shadow-sm">
-          <h2 className="font-semibold text-gray-900 dark:text-white mb-4">Weekly Sales vs Expenses</h2>
-          <div className="h-72">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={sampleSalesData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" />
-                <XAxis dataKey="day" tick={{ fontSize: 12 }} stroke="#94A3B8" />
-                <YAxis tick={{ fontSize: 12 }} stroke="#94A3B8" tickFormatter={(v) => (v/1000) + 'k'} />
-                <Tooltip formatter={(v: number) => fmt(v)} />
-                <Bar dataKey="sales" name="Sales" fill="#10B981" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="expenses" name="Expenses" fill="#EF4444" radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
+    <div className="min-h-screen p-md md:p-xl lg:p-xxl">
+      {/* Header */}
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between mb-xl gap-lg">
+        <div>
+          <h1 className="font-headline-lg text-headline-lg text-primary mb-2">See how your business is doing</h1>
+          <div className="inline-flex p-1 bg-surface-container rounded-xl">
+            <button className="px-md py-2 rounded-lg font-label-md text-label-md transition-all hover:text-primary">Today</button>
+            <button className="px-md py-2 rounded-lg font-label-md text-label-md transition-all hover:text-primary">This Week</button>
+            <button className="px-md py-2 rounded-lg font-label-md text-label-md bg-white text-primary shadow-sm">This Month</button>
           </div>
         </div>
-      )}
+        <div className="flex items-center gap-md">
+          <button className="flex items-center gap-2 px-lg py-3 border border-primary text-primary rounded-xl font-label-md text-label-md hover:bg-primary/5 transition-all active:scale-95 ease-out-expo">
+            <Icon name="download" /> Download PDF
+          </button>
+          <button className="flex items-center gap-2 px-lg py-3 bg-primary text-white rounded-xl font-label-md text-label-md hover:opacity-90 transition-all active:scale-95 ease-out-expo">
+            <Icon name="share" /> Share Report
+          </button>
+        </div>
+      </div>
 
-      {tab === 'expenses' && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="bg-white dark:bg-gray-800 rounded-2xl p-5 border border-gray-100 dark:border-gray-700 shadow-sm">
-            <h2 className="font-semibold text-gray-900 dark:text-white mb-4">What I Spent</h2>
-            <div className="h-64">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie data={sampleExpenseBreakdown} cx="50%" cy="50%" innerRadius={60} outerRadius={90} dataKey="value" label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}>
-                    {sampleExpenseBreakdown.map((_, i) => (
-                      <Cell key={i} fill={COLORS[i % COLORS.length]} />
-                    ))}
-                  </Pie>
-                  <Tooltip formatter={(v: number) => fmt(v)} />
-                </PieChart>
-              </ResponsiveContainer>
+      {/* Grid */}
+      <div className="bento-grid">
+        {/* Summary cards */}
+        <div className="col-span-12 md:col-span-4 bg-white p-lg rounded-xl border border-outline-variant hover:shadow-sm transition-shadow">
+          <div className="flex justify-between items-start mb-md">
+            <div className="p-2 bg-primary-container/20 rounded-lg"><Icon name="trending_up" className="text-primary" /></div>
+            <span className="text-xs font-bold text-green-600 bg-green-50 px-2 py-1 rounded">+12.4%</span>
+          </div>
+          <p className="font-label-md text-label-md text-outline uppercase tracking-wider mb-1">Total Sales</p>
+          <h2 className="font-headline-md text-headline-md text-primary">$45,230.00</h2>
+        </div>
+        <div className="col-span-12 md:col-span-4 bg-white p-lg rounded-xl border border-outline-variant hover:shadow-sm transition-shadow">
+          <div className="flex justify-between items-start mb-md">
+            <div className="p-2 bg-secondary-container/20 rounded-lg"><Icon name="payments" className="text-secondary" /></div>
+            <span className="text-xs font-bold text-red-600 bg-red-50 px-2 py-1 rounded">-5.2%</span>
+          </div>
+          <p className="font-label-md text-label-md text-outline uppercase tracking-wider mb-1">Money Spent</p>
+          <h2 className="font-headline-md text-headline-md text-on-surface">$12,845.00</h2>
+        </div>
+        <div className="col-span-12 md:col-span-4 bg-white p-lg rounded-xl border border-outline-variant hover:shadow-sm transition-shadow">
+          <div className="flex justify-between items-start mb-md">
+            <div className="p-2 bg-on-tertiary-container/10 rounded-lg"><Icon name="account_balance_wallet" className="text-tertiary-container" /></div>
+          </div>
+          <p className="font-label-md text-label-md text-outline uppercase tracking-wider mb-1">Money Left</p>
+          <h2 className="font-headline-md text-headline-md text-on-surface">$32,385.00</h2>
+        </div>
+
+        {/* Weekly bar chart */}
+        <div className="col-span-12 lg:col-span-8 bg-white p-lg rounded-xl border border-outline-variant">
+          <div className="flex justify-between items-center mb-xl">
+            <h3 className="font-headline-md text-primary">Weekly Performance</h3>
+            <div className="flex items-center gap-2 text-outline font-label-md"><span className="w-3 h-3 bg-primary rounded-full"></span> Sales</div>
+          </div>
+          <div className="h-64 flex items-end justify-between gap-sm px-md pb-md border-b border-outline-variant">
+            {bars.map(b => (
+              <div key={b.d} className="flex-1 flex flex-col items-center gap-sm">
+                <div className={`chart-bar w-full max-w-[48px] ${b.c} rounded-t-lg`} style={{ height: b.h }}></div>
+                <span className="text-xs font-label-md text-outline">{b.d}</span>
+              </div>
+            ))}
+          </div>
+          <div className="mt-md p-md bg-surface-container rounded-lg flex items-start gap-md">
+            <Icon name="info" className="text-primary" fill />
+            <p className="font-body-md text-on-surface-variant">High volume on Friday. <span className="font-bold text-primary">Dresses are selling the most this week</span>, contributing to 42% of total revenue.</p>
+          </div>
+        </div>
+
+        {/* Donut */}
+        <div className="col-span-12 lg:col-span-4 bg-white p-lg rounded-xl border border-outline-variant">
+          <h3 className="font-headline-md text-primary mb-xl">Category Mix</h3>
+          <div className="flex flex-col items-center gap-xl">
+            <div className="relative w-48 h-48">
+              <svg className="w-full h-full transform -rotate-90" viewBox="0 0 36 36">
+                <circle cx="18" cy="18" fill="transparent" r="16" stroke="#f0edec" strokeWidth="4"></circle>
+                <circle className="donut-segment" cx="18" cy="18" fill="transparent" r="16" stroke="#230042" strokeDasharray="50 100" strokeDashoffset="0" strokeWidth="4"></circle>
+                <circle className="donut-segment" cx="18" cy="18" fill="transparent" r="16" stroke="#744c9a" strokeDasharray="25 100" strokeDashoffset="-50" strokeWidth="4"></circle>
+                <circle className="donut-segment" cx="18" cy="18" fill="transparent" r="16" stroke="#d5a9ff" strokeDasharray="15 100" strokeDashoffset="-75" strokeWidth="4"></circle>
+              </svg>
+              <div className="absolute inset-0 flex flex-col items-center justify-center">
+                <span className="font-headline-md text-primary">100%</span>
+                <span className="text-xs text-outline">Share</span>
+              </div>
+            </div>
+            <div className="w-full flex flex-col gap-sm">
+              {[
+                { n: 'Apparel', p: '50%', c: 'bg-primary' },
+                { n: 'Logistics', p: '25%', c: 'bg-secondary' },
+                { n: 'Operations', p: '15%', c: 'bg-secondary-container' },
+                { n: 'Others', p: '10%', c: 'bg-surface-container-highest' },
+              ].map(r => (
+                <div key={r.n} className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className={`w-3 h-3 rounded-full ${r.c}`}></div>
+                    <span className="font-label-md text-on-surface">{r.n}</span>
+                  </div>
+                  <span className="font-bold text-primary">{r.p}</span>
+                </div>
+              ))}
             </div>
           </div>
-          <div className="space-y-2">
-            {sampleExpenseBreakdown.map((item, i) => (
-              <div key={i} className="bg-white dark:bg-gray-800 rounded-xl p-3 border border-gray-100 dark:border-gray-700 flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 rounded-full" style={{ backgroundColor: COLORS[i] }} />
-                  <span className="text-sm text-gray-600 dark:text-gray-400">{item.name}</span>
-                </div>
-                <span className="text-sm font-medium text-gray-900 dark:text-white">{fmt(item.value)}</span>
-              </div>
-            ))}
-          </div>
         </div>
-      )}
 
-      {tab === 'profit' && (
-        <div className="bg-white dark:bg-gray-800 rounded-2xl p-5 border border-gray-100 dark:border-gray-700 shadow-sm">
-          <h2 className="font-semibold text-gray-900 dark:text-white mb-4">Profit Trend (6 Months)</h2>
-          <div className="h-72">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={sampleProfitTrend}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" />
-                <XAxis dataKey="month" tick={{ fontSize: 12 }} stroke="#94A3B8" />
-                <YAxis tick={{ fontSize: 12 }} stroke="#94A3B8" tickFormatter={(v) => (v/1000) + 'k'} />
-                <Tooltip formatter={(v: number) => fmt(v)} />
-                <Line type="monotone" dataKey="profit" stroke="#0D9488" strokeWidth={3} dot={{ fill: '#0D9488' }} />
-              </LineChart>
-            </ResponsiveContainer>
+        {/* Best selling */}
+        <div className="col-span-12 bg-white p-lg rounded-xl border border-outline-variant">
+          <div className="flex justify-between items-center mb-lg">
+            <h3 className="font-headline-md text-primary">Best Selling Products</h3>
+            <button className="text-primary font-bold hover:underline">View All</button>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left">
+              <thead>
+                <tr className="border-b border-outline-variant">
+                  <th className="pb-md font-label-md text-outline uppercase tracking-wider">Product</th>
+                  <th className="pb-md font-label-md text-outline uppercase tracking-wider">SKU</th>
+                  <th className="pb-md font-label-md text-outline uppercase tracking-wider text-right">Units Sold</th>
+                  <th className="pb-md font-label-md text-outline uppercase tracking-wider text-right">Revenue</th>
+                  <th className="pb-md font-label-md text-outline uppercase tracking-wider text-right">Trend</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-outline-variant">
+                {[
+                  { name: 'Silk Floral Dress', cat: 'Apparel', sku: 'OZ-DRS-492', units: '1,240', rev: '$24,800.00', trend: '24%', up: true },
+                  { name: 'Leather Chelsea Boots', cat: 'Footwear', sku: 'OZ-SH-102', units: '890', rev: '$15,575.00', trend: '12%', up: true },
+                  { name: 'Classic Gold Watch', cat: 'Accessories', sku: 'OZ-ACC-931', units: '420', rev: '$12,600.00', trend: '2%', up: false },
+                ].map(p => (
+                  <tr key={p.sku} className="group hover:bg-surface-container-low transition-colors">
+                    <td className="py-md flex items-center gap-md">
+                      <div className="w-12 h-12 bg-surface-container rounded-lg flex items-center justify-center overflow-hidden">
+                        <Icon name="checkroom" className="text-outline" />
+                      </div>
+                      <div>
+                        <p className="font-bold text-primary">{p.name}</p>
+                        <p className="text-xs text-outline">Category: {p.cat}</p>
+                      </div>
+                    </td>
+                    <td className="py-md font-code text-on-surface-variant">{p.sku}</td>
+                    <td className="py-md text-right font-bold">{p.units}</td>
+                    <td className="py-md text-right font-bold text-primary">{p.rev}</td>
+                    <td className="py-md text-right">
+                      <span className={`flex items-center justify-end gap-1 ${p.up ? 'text-green-600' : 'text-on-surface-variant'}`}>
+                        <Icon name={p.up ? 'trending_up' : 'remove'} className="text-sm" /> {p.trend}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </div>
-      )}
-
-      {tab === 'products' && (
-        <div className="bg-white dark:bg-gray-800 rounded-2xl p-5 border border-gray-100 dark:border-gray-700 shadow-sm">
-          <h2 className="font-semibold text-gray-900 dark:text-white mb-4">Best Selling Products</h2>
-          <div className="space-y-3">
-            {[
-              { name: 'Dress', sales: 45, revenue: 900000 },
-              { name: 'Shirt', sales: 32, revenue: 480000 },
-              { name: 'Shoes', sales: 28, revenue: 560000 },
-              { name: 'Skirt', sales: 18, revenue: 270000 },
-              { name: 'Accessory', sales: 15, revenue: 75000 },
-            ].map((p, i) => (
-              <div key={i} className="flex items-center gap-3 py-2 border-b border-gray-100 dark:border-gray-700 last:border-0">
-                <div className="w-8 h-8 rounded-xl bg-gray-100 dark:bg-gray-700 flex items-center justify-center text-sm font-bold text-gray-500">{i + 1}</div>
-                <div className="flex-1">
-                  <p className="text-sm font-medium text-gray-900 dark:text-white">{p.name}</p>
-                  <p className="text-xs text-gray-400">{p.sales} units sold</p>
-                </div>
-                <p className="text-sm font-semibold text-gray-900 dark:text-white">{fmt(p.revenue)}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+      </div>
     </div>
   );
 }

@@ -1,60 +1,97 @@
-import { NavLink, Outlet } from 'react-router-dom';
-import { LayoutDashboard, MessageSquare, History, FileText, BarChart3, Settings, Moon, Sun } from 'lucide-react';
-import { useState } from 'react';
+import { NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { useAuth } from '../contexts/AuthContext';
+
+function Icon({ name, className = '' }: { name: string; className?: string }) {
+  return <span className={`material-symbols-outlined ${className}`}>{name}</span>;
+}
 
 export default function AppLayout() {
-  const [dark, setDark] = useState(false);
-  const toggleDark = () => {
-    setDark(!dark);
-    document.documentElement.classList.toggle('dark');
-  };
+  const navigate = useNavigate();
+  const { logout } = useAuth();
 
-  const linkClass = ({ isActive }: { isActive: boolean }) =>
-    `flex flex-col items-center gap-0.5 text-[10px] font-medium transition-colors px-2 py-1 min-w-[56px] min-h-[48px] justify-center ${
-      isActive ? 'text-[#0D9488]' : 'text-gray-400 dark:text-gray-500'
+  const nav = [
+    { to: '/chat', icon: 'chat', label: 'Chat' },
+    { to: '/transactions', icon: 'history', label: 'History' },
+    { to: '/reports', icon: 'analytics', label: 'Reports' },
+    { to: '/settings', icon: 'settings', label: 'Settings' },
+  ];
+
+  const sideLink = ({ isActive }: { isActive: boolean }) =>
+    `w-full flex items-center gap-3 px-4 py-3 rounded-lg font-bold ease-out-expo duration-200 ${
+      isActive ? 'bg-primary-container text-white' : 'text-on-surface-variant hover:bg-surface-container-high transition-colors font-normal'
     }`;
 
+  const mobLink = ({ isActive }: { isActive: boolean }) =>
+    `flex flex-col items-center justify-center rounded-xl p-2 w-16 h-16 transition-transform ${
+      isActive ? 'bg-primary-container text-white' : 'text-on-surface-variant'
+    }`;
+
+  const handleSignOut = () => { logout(); navigate('/login'); };
+
   return (
-    <div className={`min-h-screen bg-[#F8FAFC] ${dark ? 'dark bg-gray-950' : ''}`}>
-      {/* Top Bar */}
-      <header className="sticky top-0 z-20 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800">
-        <div className="max-w-6xl mx-auto px-4 h-14 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <span className="text-2xl">🦉</span>
-            <h1 className="font-bold text-lg text-gray-900 dark:text-white">Ozzy for Business</h1>
+    <div className="bg-surface font-body-md text-on-surface min-h-screen">
+      {/* Desktop Sidebar */}
+      <aside className="hidden md:flex flex-col h-screen w-64 fixed left-0 top-0 bg-surface border-r border-outline-variant z-50">
+        <div className="p-md flex flex-col gap-xs">
+          <div className="flex items-center gap-sm">
+            <div className="w-10 h-10 bg-primary rounded-lg flex items-center justify-center">
+              <Icon name="token" className="text-on-primary" />
+            </div>
+            <div>
+              <h1 className="font-headline-md text-headline-md font-bold text-primary">Ozzy</h1>
+              <p className="font-label-md text-label-md text-outline">Business Suite</p>
+            </div>
           </div>
-          <button onClick={toggleDark} className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition">
-            {dark ? <Sun size={20} className="text-yellow-400" /> : <Moon size={20} className="text-gray-500" />}
+        </div>
+
+        <nav className="flex-1 px-sm py-md space-y-sm">
+          {nav.map(n => (
+            <NavLink key={n.to} to={n.to} className={sideLink}>
+              <Icon name={n.icon} />
+              <span className="font-label-md text-label-md">{n.label}</span>
+            </NavLink>
+          ))}
+        </nav>
+
+        <div className="p-md mt-auto space-y-md">
+          <button onClick={() => navigate('/chat')} className="w-full py-4 bg-primary text-on-primary font-bold rounded-xl flex items-center justify-center gap-2 active:scale-95 transition-transform duration-200 ease-out-expo">
+            <Icon name="add_circle" /> New Request
           </button>
+          <div className="border-t border-outline-variant pt-md">
+            <button className="w-full flex items-center gap-3 px-4 py-2 text-on-surface-variant hover:text-primary transition-colors">
+              <Icon name="help" />
+              <span className="font-label-md text-label-md">Help Center</span>
+            </button>
+            <button onClick={handleSignOut} className="w-full flex items-center gap-3 px-4 py-2 text-on-surface-variant hover:text-error transition-colors">
+              <Icon name="logout" />
+              <span className="font-label-md text-label-md">Sign Out</span>
+            </button>
+          </div>
+        </div>
+      </aside>
+
+      {/* Mobile Top App Bar */}
+      <header className="flex md:hidden justify-between items-center w-full px-margin-mobile py-sm bg-surface-bright border-b border-outline-variant sticky top-0 z-40 shadow-sm">
+        <h1 className="font-headline-md text-headline-md font-bold text-primary">Ozzy</h1>
+        <div className="flex items-center gap-md">
+          <Icon name="notifications" className="text-primary" />
+          <Icon name="account_circle" className="text-primary" />
         </div>
       </header>
 
-      <main className="max-w-6xl mx-auto px-4 py-6 pb-24">
+      {/* Page content */}
+      <main className="md:ml-64 relative">
         <Outlet />
       </main>
 
-      {/* Bottom Nav — Figma 5-tab: Home, Chat, History, Reports, Settings */}
-      <nav className="fixed bottom-0 left-0 right-0 z-20 bg-white dark:bg-gray-900 border-t border-gray-200 dark:border-gray-800">
-        <div className="max-w-6xl mx-auto flex justify-around py-1">
-          <NavLink to="/dashboard" className={linkClass}>
-            <LayoutDashboard size={20} /><span>Home</span>
+      {/* Mobile Bottom Nav */}
+      <nav className="md:hidden fixed bottom-0 left-0 w-full flex justify-around items-center px-4 py-2 bg-surface border-t border-outline-variant shadow-lg z-50 rounded-t-xl">
+        {nav.map(n => (
+          <NavLink key={n.to} to={n.to} className={mobLink}>
+            <Icon name={n.icon} />
+            <span className="font-label-md text-label-md">{n.label}</span>
           </NavLink>
-          <NavLink to="/chat" className={linkClass}>
-            <MessageSquare size={20} /><span>Chat</span>
-          </NavLink>
-          <NavLink to="/transactions" className={linkClass}>
-            <History size={20} /><span>History</span>
-          </NavLink>
-          <NavLink to="/invoices" className={linkClass}>
-            <FileText size={20} /><span>Invoices</span>
-          </NavLink>
-          <NavLink to="/reports" className={linkClass}>
-            <BarChart3 size={20} /><span>Reports</span>
-          </NavLink>
-          <NavLink to="/settings" className={linkClass}>
-            <Settings size={20} /><span>Settings</span>
-          </NavLink>
-        </div>
+        ))}
       </nav>
     </div>
   );
