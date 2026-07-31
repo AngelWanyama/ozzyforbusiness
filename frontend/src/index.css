@@ -6,6 +6,11 @@
   --color-orange: #F97316;
   --color-green: #10B981;
   --color-red: #EF4444;
+  /* Ozzy brand */
+  --ozzy-purple: #3F0071;
+  --ozzy-purple-dark: #2E0054;
+  /* Strong easing curves for UI motion */
+  --ease-out-strong: cubic-bezier(0.23, 1, 0.32, 1);
 }
 
 @theme {
@@ -14,6 +19,8 @@
   --color-ozzy-orange: #F97316;
   --color-ozzy-green: #10B981;
   --color-ozzy-red: #EF4444;
+  --color-ozzy-purple: #3F0071;
+  --color-ozzy-purple-dark: #2E0054;
 }
 
 body {
@@ -30,4 +37,35 @@ h1, h2, h3, h4, h5, h6 {
 .dark {
   background: #0F172A;
   color: #E2E8F0;
+}
+
+/* ---- Entrance animation: gentle fade-up ---- */
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.fade-up {
+  opacity: 0;
+  animation: fade-up 500ms var(--ease-out-strong) forwards;
+}
+
+/* Stagger helpers: each later item starts slightly after the previous one */
+.fade-up-d1 { animation-delay: 60ms; }
+.fade-up-d2 { animation-delay: 120ms; }
+.fade-up-d3 { animation-delay: 180ms; }
+.fade-up-d4 { animation-delay: 240ms; }
+
+/* Respect users who prefer less motion: keep the fade, remove the movement */
+@media (prefers-reduced-motion: reduce) {
+  @keyframes fade-up {
+    from { opacity: 0; transform: none; }
+    to   { opacity: 1; transform: none; }
+  }
 }

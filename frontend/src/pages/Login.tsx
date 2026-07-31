@@ -1,18 +1,51 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { Phone, Lock, UserPlus, LogIn, Mic, TrendingUp, MapPin, FileText } from 'lucide-react';
+import { Phone, Lock, Eye, EyeOff, ChevronDown, Search, Loader2 } from 'lucide-react';
 import ozzyLogo from '../assets/ozzy-logo.png';
+import ozzyHero from '../assets/ozzy-hero.jpg';
+import { AFRICA_COUNTRIES, type Country } from '../data/africaCountries';
 
 export default function Login() {
   const [mode, setMode] = useState<'login' | 'register'>('login');
+  const [country, setCountry] = useState<Country>(AFRICA_COUNTRIES[0]); // Uganda default
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [countrySearch, setCountrySearch] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const { login, register } = useAuth();
   const navigate = useNavigate();
+  const pickerRef = useRef<HTMLDivElement>(null);
+
+  // Close the country picker when clicking anywhere outside it
+  useEffect(() => {
+    function onClickOutside(e: MouseEvent) {
+      if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) {
+        setPickerOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', onClickOutside);
+    return () => document.removeEventListener('mousedown', onClickOutside);
+  }, []);
+
+  const filteredCountries = useMemo(() => {
+    const q = countrySearch.trim().toLowerCase();
+    if (!q) return AFRICA_COUNTRIES;
+    return AFRICA_COUNTRIES.filter(
+      c => c.name.toLowerCase().includes(q) || c.dial.includes(q),
+    );
+  }, [countrySearch]);
+
+  // Build the full international phone number: dial code + local number
+  // (leading zeros in the local part are removed, e.g. 0770... -> 770...)
+  const buildFullPhone = () => {
+    const local = phone.replace(/\D/g, '').replace(/^0+/, '');
+    return `${country.dial}${local}`;
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -23,12 +56,13 @@ export default function Login() {
       return;
     }
 
+    const fullPhone = buildFullPhone();
     setLoading(true);
     try {
       if (mode === 'login') {
-        await login(phone, password);
+        await login(fullPhone, password);
       } else {
-        await register(phone, password);
+        await register(fullPhone, password);
       }
       navigate('/dashboard', { replace: true });
     } catch (err: any) {
@@ -45,120 +79,211 @@ export default function Login() {
     setConfirmPassword('');
   };
 
-  const features = [
-    { icon: Mic, text: 'Speak your transactions instead of typing, in English' },
-    { icon: FileText, text: 'Generate invoices and receipts on the spot, with your business logo' },
-    { icon: TrendingUp, text: 'Get daily profit summaries and trends, automatically' },
-    { icon: MapPin, text: 'Built for local currency and how business really works across Africa' },
-  ];
+  const inputClass =
+    'w-full h-[52px] pl-11 pr-4 border border-gray-200 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-800 dark:text-white placeholder:text-gray-400 hover:border-gray-300 dark:hover:border-gray-600 focus:border-[#3F0071] focus:ring-4 focus:ring-[#3F0071]/10 outline-none transition-[border-color,box-shadow] duration-150';
 
   return (
     <div className="min-h-screen flex">
-      {/* Brand panel — hidden on small screens, shown from large screens up */}
-      <div className="hidden lg:flex lg:w-1/2 bg-[#3F0071] flex-col justify-center px-16 relative overflow-hidden">
-        {/* decorative background circles */}
-        <div className="absolute -top-24 -left-24 w-96 h-96 rounded-full bg-white/5"></div>
-        <div className="absolute bottom-0 right-0 w-72 h-72 rounded-full bg-white/5 translate-x-1/3 translate-y-1/3"></div>
+      {/* ---------- Form panel (left) ---------- */}
+      <div className="w-full lg:w-[46%] flex items-center justify-center bg-white dark:bg-gray-950 p-6 sm:p-10">
+        <div className="fade-up w-full max-w-[420px]">
+          {/* logo */}
+          <img src={ozzyLogo} alt="Ozzy for Business" className="h-24 mb-8" />
 
-        <div className="relative z-10 max-w-md">
-          <h2 className="text-4xl font-bold text-white mb-4 leading-tight">
-            Track your business by chatting.
-          </h2>
-          <p className="text-purple-200 mb-10 text-lg">
-            No spreadsheets, no accounting software, no training required.
+          <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">
+            {mode === 'login' ? 'Welcome back' : 'Create your account'}
+          </h1>
+          <p className="text-gray-500 dark:text-gray-400 mb-8">
+            {mode === 'login'
+              ? 'Log in to keep your business records up to date.'
+              : 'Start tracking your business the easy way.'}
           </p>
-          <div className="space-y-5">
-            {features.map((f, i) => (
-              <div key={i} className="flex items-start gap-3">
-                <div className="w-9 h-9 rounded-lg bg-white/10 flex items-center justify-center flex-shrink-0">
-                  <f.icon size={18} className="text-white" />
-                </div>
-                <p className="text-purple-100 text-sm pt-1.5">{f.text}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
 
-      {/* Form panel */}
-      <div className="w-full lg:w-1/2 flex items-center justify-center bg-gradient-to-br from-white to-[#F9FAFB] dark:from-gray-900 dark:to-gray-950 p-4">
-        <div className="w-full max-w-sm">
-          <div className="text-center mb-8">
-            <img src={ozzyLogo} alt="Ozzy for Business" className="h-32 mx-auto mb-3" />
-            <p className="text-gray-500 dark:text-gray-400">Track your business finances the easy way</p>
-          </div>
+          {error && (
+            <div
+              role="alert"
+              className="fade-up bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 border border-red-100 dark:border-red-900/40 p-3 rounded-xl text-sm mb-5"
+            >
+              {error}
+            </div>
+          )}
 
-          {error && <div className="bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 p-3 rounded-xl text-sm mb-4 text-center">{error}</div>}
-
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={handleSubmit} className="space-y-5">
+            {/* Phone number with country-code picker */}
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Phone Number</label>
-              <div className="relative">
-                <Phone size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                <input
-                  type="tel"
-                  className="w-full pl-10 pr-4 py-3 border border-gray-200 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-800 dark:text-white focus:ring-2 focus:ring-[#3F0071] focus:border-transparent outline-none transition"
-                  placeholder="+256 7XX XXX XXX"
-                  value={phone}
-                  onChange={e => setPhone(e.target.value)}
-                  required
-                  autoFocus
-                />
+              <div className="flex gap-2">
+                {/* country picker */}
+                <div className="relative" ref={pickerRef}>
+                  <button
+                    type="button"
+                    onClick={() => setPickerOpen(o => !o)}
+                    aria-label="Select country code"
+                    className="h-[52px] flex items-center gap-1.5 px-3 border border-gray-200 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-800 hover:border-gray-300 dark:hover:border-gray-600 focus:border-[#3F0071] focus:ring-4 focus:ring-[#3F0071]/10 outline-none transition-[border-color,box-shadow] duration-150"
+                  >
+                    <span className="text-lg leading-none">{country.flag}</span>
+                    <span className="text-sm text-gray-700 dark:text-gray-200">{country.dial}</span>
+                    <ChevronDown size={15} className={`text-gray-400 transition-transform duration-150 ${pickerOpen ? 'rotate-180' : ''}`} />
+                  </button>
+
+                  {pickerOpen && (
+                    <div className="absolute z-50 top-full left-0 mt-2 w-72 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-xl overflow-hidden">
+                      <div className="p-2 border-b border-gray-100 dark:border-gray-700">
+                        <div className="relative">
+                          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                          <input
+                            autoFocus
+                            value={countrySearch}
+                            onChange={e => setCountrySearch(e.target.value)}
+                            placeholder="Search country…"
+                            className="w-full pl-9 pr-3 py-2 text-sm bg-gray-50 dark:bg-gray-900 dark:text-white rounded-lg outline-none focus:ring-2 focus:ring-[#3F0071]/20"
+                          />
+                        </div>
+                      </div>
+                      <div className="max-h-60 overflow-y-auto py-1">
+                        {filteredCountries.map(c => (
+                          <button
+                            key={c.code}
+                            type="button"
+                            onClick={() => {
+                              setCountry(c);
+                              setPickerOpen(false);
+                              setCountrySearch('');
+                            }}
+                            className="w-full flex items-center gap-3 px-3 py-2 text-left hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                          >
+                            <span className="text-lg leading-none">{c.flag}</span>
+                            <span className="flex-1 text-sm text-gray-700 dark:text-gray-200 truncate">{c.name}</span>
+                            <span className="text-sm text-gray-400">{c.dial}</span>
+                          </button>
+                        ))}
+                        {filteredCountries.length === 0 && (
+                          <p className="px-3 py-3 text-sm text-gray-400 text-center">No country found</p>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* local number */}
+                <div className="relative flex-1">
+                  <Phone size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                  <input
+                    type="tel"
+                    className={inputClass}
+                    placeholder="700 000 000"
+                    value={phone}
+                    onChange={e => setPhone(e.target.value)}
+                    required
+                    autoFocus
+                  />
+                </div>
               </div>
             </div>
 
+            {/* Password */}
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Password</label>
               <div className="relative">
                 <Lock size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
                 <input
-                  type="password"
-                  className="w-full pl-10 pr-4 py-3 border border-gray-200 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-800 dark:text-white focus:ring-2 focus:ring-[#3F0071] focus:border-transparent outline-none transition"
+                  type={showPassword ? 'text' : 'password'}
+                  className={`${inputClass} pr-11`}
                   placeholder="At least 6 characters"
                   value={password}
                   onChange={e => setPassword(e.target.value)}
                   required
                   minLength={6}
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(s => !s)}
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors duration-150"
+                >
+                  {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                </button>
               </div>
             </div>
 
-            {mode === 'register' && (
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Confirm Password</label>
-                <div className="relative">
-                  <Lock size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                  <input
-                    type="password"
-                    className="w-full pl-10 pr-4 py-3 border border-gray-200 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-800 dark:text-white focus:ring-2 focus:ring-[#3F0071] focus:border-transparent outline-none transition"
-                    placeholder="Re-enter your password"
-                    value={confirmPassword}
-                    onChange={e => setConfirmPassword(e.target.value)}
-                    required
-                    minLength={6}
-                  />
+            {/* Confirm password — slides open in sign-up mode */}
+            <div
+              className="grid transition-[grid-template-rows] duration-300 ease-[cubic-bezier(0.23,1,0.32,1)]"
+              style={{ gridTemplateRows: mode === 'register' ? '1fr' : '0fr' }}
+            >
+              <div className="overflow-hidden">
+                <div className="pb-1">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Confirm Password</label>
+                  <div className="relative">
+                    <Lock size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      className={inputClass}
+                      placeholder="Re-enter your password"
+                      value={confirmPassword}
+                      onChange={e => setConfirmPassword(e.target.value)}
+                      required={mode === 'register'}
+                      minLength={6}
+                      tabIndex={mode === 'register' ? 0 : -1}
+                    />
+                  </div>
                 </div>
               </div>
-            )}
+            </div>
 
             <button
               type="submit"
               disabled={loading}
-              className="w-full py-3 bg-[#3F0071] hover:bg-[#2E0054] text-white font-semibold rounded-xl transition disabled:opacity-50 flex items-center justify-center gap-2"
+              className="w-full h-14 bg-[#3F0071] hover:bg-[#2E0054] active:scale-[0.98] text-white font-semibold rounded-xl transition-[background-color,transform] duration-150 ease-out disabled:opacity-60 disabled:active:scale-100 flex items-center justify-center gap-2 shadow-sm shadow-[#3F0071]/20"
             >
-              {mode === 'login' ? <LogIn size={18} /> : <UserPlus size={18} />}
-              {loading ? (mode === 'login' ? 'Logging in...' : 'Creating account...') : (mode === 'login' ? 'Log In' : 'Create Account')}
+              {loading && <Loader2 size={18} className="animate-spin" />}
+              {loading
+                ? (mode === 'login' ? 'Logging in…' : 'Creating account…')
+                : (mode === 'login' ? 'Log In' : 'Create Account')}
             </button>
+          </form>
 
+          <p className="mt-6 text-center text-sm text-gray-500 dark:text-gray-400">
+            {mode === 'login' ? "Don't have an account? " : 'Already have an account? '}
             <button
               type="button"
               onClick={switchMode}
-              className="w-full py-2 text-sm text-gray-500 dark:text-gray-400 hover:text-[#3F0071] dark:hover:text-gray-200 transition text-center"
+              className="font-semibold text-[#3F0071] dark:text-purple-300 hover:underline"
             >
-              {mode === 'login' ? "Don't have an account? Create one" : "Already have an account? Log in"}
+              {mode === 'login' ? 'Create one' : 'Log in'}
             </button>
-          </form>
+          </p>
         </div>
+      </div>
+
+      {/* ---------- Photo panel (right, large screens only) ---------- */}
+      <div className="hidden lg:block lg:w-[54%] relative overflow-hidden bg-[#3F0071]">
+        <img
+          src={ozzyHero}
+          alt="A business owner tracking her sales by chatting with Ozzy"
+          className="absolute inset-0 w-full h-full object-cover object-top"
+        />
+        {/* purple wash for depth + text legibility at the bottom */}
+        <div
+          className="absolute inset-0"
+          style={{
+            background:
+              'linear-gradient(180deg, rgba(46,0,84,0.15) 0%, rgba(46,0,84,0.0) 40%, rgba(46,0,84,0.45) 80%, rgba(46,0,84,0.85) 100%)',
+          }}
+        ></div>
+
+        <div className="absolute bottom-0 left-0 right-0 p-12 z-10">
+          <h2 className="fade-up text-[2.4rem] font-bold text-white mb-3 leading-[1.15] tracking-tight">
+            Track your business by chatting.
+          </h2>
+          <p className="fade-up fade-up-d1 text-purple-100/90 text-lg max-w-md">
+            No spreadsheets, no accounting software, no training required.
+          </p>
+        </div>
+
+        <p className="absolute top-8 right-12 text-white/80 text-sm font-medium tracking-wide z-10">
+          Ozzy Africa Technologies
+        </p>
       </div>
     </div>
   );
