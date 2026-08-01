@@ -35,11 +35,14 @@ async def register(
         existing_user.password_hash = hash_password(register_in.password)
         user = existing_user
     else:
+        new_id = uuid.uuid4()
         user = UserModel(
-            id=uuid.uuid4(),
+            id=new_id,
             phone_number=register_in.phone_number,
             password_hash=hash_password(register_in.password),
-            currency="UGX"
+            currency="UGX",
+            role="owner",
+            business_id=new_id,
         )
         db.add(user)
 
