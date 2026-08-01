@@ -16,6 +16,7 @@ class Transaction(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    business_id = Column(UUID(as_uuid=True), nullable=True, index=True)
     item_id = Column(UUID(as_uuid=True), ForeignKey("items.id"), nullable=True)
     type = Column(Enum(TransactionType), nullable=False)
     amount = Column(Numeric(precision=18, scale=2), nullable=False)
@@ -24,5 +25,5 @@ class Transaction(Base):
     quantity = Column(Numeric(precision=18, scale=2), default=1)
     transaction_date = Column(DateTime, default=datetime.utcnow)
 
-    user = relationship("User", backref="transactions")
+    user = relationship("User", foreign_keys=[user_id], backref="transactions")
     item = relationship("Item", backref="transactions")

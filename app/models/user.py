@@ -19,6 +19,8 @@ class User(Base):
     business_name = Column(String, nullable=True)
     business_type = Column(String, nullable=True)
     currency = Column(String, default="UGX")
+    role = Column(String, default="owner", nullable=False)  # "owner" or "worker"
+    business_id = Column(UUID(as_uuid=True), nullable=True, index=True)
     plan_type = Column(SQLEnum(PlanType), default=PlanType.FREE, nullable=False)
     transactions_this_month = Column(Integer, default=0, nullable=False)
     last_transaction_at = Column(DateTime, nullable=True)
