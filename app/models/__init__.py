@@ -5,3 +5,4 @@ from app.models.config import Config
 from app.models.otp import OTP
 from app.models.summary import Summary
 from app.models.payment import Payment
+from app.models.invite import Invite
