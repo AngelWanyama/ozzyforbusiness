@@ -141,6 +141,14 @@ class ApiClient {
     return this.request<any>('/users/plan');
   }
 
+  async getMe() {
+    return this.request<any>('/users/me');
+  }
+
+  async updateMe(data: { business_name?: string; business_type?: string; currency?: string }) {
+    return this.request('/users/me', { method: 'PATCH', body: JSON.stringify(data) });
+  }
+
   async getUserUsage() {
     return this.request<any>('/users/usage');
   }
