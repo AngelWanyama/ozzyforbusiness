@@ -1,5 +1,6 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import ozzyLogo from '../assets/ozzy-icon-logo.png';
 
 function Icon({ name, className = '' }: { name: string; className?: string }) {
   return <span className={`material-symbols-outlined ${className}`}>{name}</span>;
@@ -11,7 +12,7 @@ export default function AppLayout() {
 
   const nav = [
     { to: '/chat', icon: 'chat', label: 'Chat' },
-    { to: '/transactions', icon: 'history', label: 'History' },
+    { to: '/transactions', icon: 'history', label: 'Activities' },
     { to: '/reports', icon: 'analytics', label: 'Reports' },
     { to: '/settings', icon: 'settings', label: 'Settings' },
   ];
@@ -34,9 +35,7 @@ export default function AppLayout() {
       <aside className="hidden md:flex flex-col h-screen w-64 fixed left-0 top-0 bg-surface border-r border-outline-variant z-50">
         <div className="p-md flex flex-col gap-xs">
           <div className="flex items-center gap-sm">
-            <div className="w-10 h-10 bg-primary rounded-lg flex items-center justify-center">
-              <Icon name="token" className="text-on-primary" />
-            </div>
+            <img src={ozzyLogo} alt="Ozzy" className="w-10 h-10 rounded-lg object-cover" />
             <div>
               <h1 className="font-headline-md text-headline-md font-bold text-primary">Ozzy</h1>
               <p className="font-label-md text-label-md text-outline">Business Suite</p>

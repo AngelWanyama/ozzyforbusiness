@@ -1,28 +1,24 @@
 import { useState, useEffect, useRef } from 'react';
 import api from '../api/client';
+import ozzyLogo from '../assets/ozzy-icon-logo.png';
 import { useNavigate } from 'react-router-dom';
 
 function Icon({ name, className = '' }: { name: string; className?: string }) {
   return <span className={`material-symbols-outlined ${className}`}>{name}</span>;
 }
 
-interface Draft { type: 'sale' | 'expense'; description: string; amount: number; quantity: number; }
-interface Msg {
-  id: string;
-  role: 'ozzy' | 'user';
-  kind: 'text' | 'confirm' | 'recorded';
-  text?: string;
-  draft?: Draft;
-}
+interface Draft { type: 'sale' | 'expense'; description: string; amount: number; quantity: number; original: string; }
+interface Msg { id: string; role: 'ozzy' | 'user'; kind: 'text' | 'confirm' | 'recorded'; text?: string; draft?: Draft; }
 
 export default function Chat() {
   const [messages, setMessages] = useState<Msg[]>([{
     id: 'welcome', role: 'ozzy', kind: 'text',
-    text: "Hi! I'm Ozzy. Tell me what happened in your business, like \"Sold 3 sodas 6,000\" or \"Paid rent 200,000\", and I'll record it.",
+    text: "👋 Hi! I'm Ozzy, your business partner. Tell me what happened today, like \"Sold 3 sodas 6,000\" or \"Bought airtime 5,000\". You can also ask me things like \"What's my profit today?\"",
   }]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [summary, setSummary] = useState<any>(null);
+  const [pending, setPending] = useState<Draft | null>(null);   // waiting for a missing amount
   const endRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
 
@@ -34,6 +30,19 @@ export default function Chat() {
   useEffect(() => { setTimeout(() => endRef.current?.scrollIntoView({ behavior: 'smooth' }), 80); }, [messages]);
 
   const push = (m: Omit<Msg, 'id'>) => setMessages(p => [...p, { ...m, id: Date.now() + '' + Math.random() }]);
+  const firstNumber = (t: string) => { const m = t.replace(/,/g, '').match(/\d+(\.\d+)?/); return m ? parseFloat(m[0]) : 0; };
+
+  const showConfirm = (d: Draft) => push({ role: 'ozzy', kind: 'confirm', draft: d });
+
+  const answerQuery = async (msg: string) => {
+    const s = await api.getReportSummary().catch(() => null);
+    const sales = Number(s?.total_sales || 0), spent = Number(s?.total_expenses || 0);
+    const profit = sales - spent;
+    const q = msg.toLowerCase();
+    if (q.includes('profit')) push({ role: 'ozzy', kind: 'text', text: `Today your profit is ${fmt(profit)} — you sold ${fmt(sales)} and spent ${fmt(spent)}.` });
+    else if (q.includes('spent') || q.includes('expense')) push({ role: 'ozzy', kind: 'text', text: `You've spent ${fmt(spent)} today.` });
+    else push({ role: 'ozzy', kind: 'text', text: `Today you've sold ${fmt(sales)}, spent ${fmt(spent)}, so your profit is ${fmt(profit)}.` });
+  };
 
   const send = async (text?: string) => {
     const msg = (text ?? input).trim();
@@ -42,16 +51,32 @@ export default function Chat() {
     setInput('');
     setLoading(true);
     try {
+      // waiting for an amount from a previous message
+      if (pending) {
+        const amt = firstNumber(msg);
+        if (amt > 0) { const d = { ...pending, amount: amt, original: `${pending.original} ${msg}` }; setPending(null); showConfirm(d); }
+        else push({ role: 'ozzy', kind: 'text', text: `How much was it? Just type the amount, like 5,000.` });
+        return;
+      }
+
       const res: any = await api.processChat(msg);
       const p = res.parsed || res;
-      const intent = p.intent || p.type;           // backend returns 'intent'
-      const description = p.item || p.description || msg;  // backend returns 'item'
+      const intent = p.intent || p.type;
+      const description = p.item || p.description || 'item';
       const amount = parseFloat(p.amount) || 0;
       const quantity = parseFloat(p.quantity) || 1;
-      if ((intent === 'sale' || intent === 'expense') && amount > 0) {
-        push({ role: 'ozzy', kind: 'confirm', draft: { type: intent, description, amount, quantity } });
+
+      if (intent === 'query') { await answerQuery(msg); return; }
+
+      // buying stock counts as money out (expense)
+      const type: 'sale' | 'expense' = intent === 'sale' ? 'sale' : 'expense';
+
+      if (amount > 0) {
+        showConfirm({ type, description, amount, quantity, original: msg });
       } else {
-        push({ role: 'ozzy', kind: 'text', text: `I didn't catch an amount. Try "Sold rice 10,000" or "Paid rent 300,000".` });
+        // no amount yet -> ask for it (guided)
+        setPending({ type, description, amount: 0, quantity, original: msg });
+        push({ role: 'ozzy', kind: 'text', text: `Got it — ${description}. How much was it?` });
       }
     } catch {
       push({ role: 'ozzy', kind: 'text', text: `Sorry, something went wrong. Please try again.` });
@@ -67,13 +92,13 @@ export default function Chat() {
       await api.createTransaction({ type: m.draft.type, amount: m.draft.amount, description: m.draft.description, quantity: m.draft.quantity });
       push({ role: 'ozzy', kind: 'recorded', draft: m.draft });
       loadSummary();
-    } catch {
-      push({ role: 'ozzy', kind: 'text', text: `Couldn't save that. Please try again.` });
-    }
+    } catch { push({ role: 'ozzy', kind: 'text', text: `Couldn't save that. Please try again.` }); }
   };
-  const confirmNo = (m: Msg) => {
+  const confirmEdit = (m: Msg) => {
     setMessages(p => p.filter(x => x.id !== m.id));
-    push({ role: 'ozzy', kind: 'text', text: `No problem, I didn't record it.` });
+    setInput(m.draft?.original || '');
+    push({ role: 'ozzy', kind: 'text', text: `Sure — I've put it back below. Fix it and send again.` });
+    document.getElementById('chat-input')?.focus();
   };
 
   const onKey = (e: React.KeyboardEvent) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } };
@@ -82,20 +107,17 @@ export default function Chat() {
     <div className="h-screen flex flex-col relative overflow-hidden">
       {/* Summary strip */}
       <div className="z-30 px-lg py-md md:px-margin-desktop">
-        <button
-          onClick={() => navigate('/reports')}
-          className="mx-auto flex items-center justify-center gap-lg bg-surface-container-low hover:bg-surface-container hover:shadow-sm cursor-pointer transition-all rounded-full px-lg py-3 border border-outline-variant/40"
-        >
+        <button onClick={() => navigate('/reports')} className="mx-auto flex items-center justify-center gap-xl bg-surface-container-low hover:bg-surface-container hover:shadow-sm cursor-pointer transition-all rounded-full px-xl py-4 border border-outline-variant/40">
           <span className="flex items-center gap-2 whitespace-nowrap">
-            <Icon name="trending_up" className="text-[#1EBFA3] text-[18px]" />
-            <span className="font-label-md text-label-md text-on-surface-variant">Today's sales</span>
-            <span className="font-label-md text-label-md font-bold text-primary">{summary ? fmt(summary.total_sales) : '—'}</span>
+            <Icon name="trending_up" className="text-[#1EBFA3] text-[22px]" />
+            <span className="text-[15px] text-on-surface-variant">Today's sales</span>
+            <span className="text-[16px] font-bold text-primary">{summary ? fmt(summary.total_sales) : '—'}</span>
           </span>
           <span className="w-px h-5 bg-outline-variant"></span>
           <span className="flex items-center gap-2 whitespace-nowrap">
-            <Icon name="trending_down" className="text-outline text-[18px]" />
-            <span className="font-label-md text-label-md text-on-surface-variant">Spent</span>
-            <span className="font-label-md text-label-md font-bold text-on-surface">{summary ? fmt(summary.total_expenses) : '—'}</span>
+            <Icon name="trending_down" className="text-outline text-[22px]" />
+            <span className="text-[15px] text-on-surface-variant">Spent</span>
+            <span className="text-[16px] font-bold text-on-surface">{summary ? fmt(summary.total_expenses) : '—'}</span>
           </span>
         </button>
       </div>
@@ -117,31 +139,27 @@ export default function Chat() {
               </div>
             </div>
           ) : (
-            <div key={m.id} className="flex flex-col gap-sm items-start">
+            <div key={m.id} className="flex flex-col gap-sm items-start w-full">
               <div className="flex items-center gap-sm">
-                <div className="w-6 h-6 rounded-full bg-[#1EBFA3] flex items-center justify-center">
-                  <Icon name="token" className="text-[14px] text-white" />
-                </div>
+                <img src={ozzyLogo} alt="Ozzy" className="w-6 h-6 rounded-full object-cover" />
                 <span className="font-label-md text-label-md text-outline">Ozzy</span>
               </div>
 
               {m.kind === 'confirm' && m.draft ? (
-                <div className="bg-surface-container-high text-on-surface px-lg py-md rounded-2xl rounded-tl-none max-w-[85%] shadow-sm space-y-md">
-                  <p className="font-body-md text-body-md">Please confirm:</p>
-                  <div className="bg-surface-container-lowest border border-outline-variant p-lg rounded-xl shadow-sm">
-                    <div className="flex items-center justify-between mb-md">
-                      <div className="flex items-center gap-sm">
-                        <Icon name="check_circle" className="text-primary" />
-                        <span className="font-label-md text-label-md font-bold text-primary">{m.draft.type === 'sale' ? 'Sale' : 'Expense'}</span>
-                      </div>
+                <div className="bg-surface-container-high text-on-surface p-lg rounded-2xl rounded-tl-none w-full max-w-[420px] shadow-sm">
+                  <p className="font-body-md text-body-md mb-md">Please confirm:</p>
+                  <div className="bg-surface-container-lowest border border-outline-variant p-lg rounded-xl">
+                    <div className="flex items-center gap-2 mb-lg">
+                      <Icon name="check_circle" className="text-primary" />
+                      <span className="text-[15px] font-bold text-primary">{m.draft.type === 'sale' ? 'Sale' : 'Expense'}</span>
                     </div>
-                    <div className="flex justify-between items-center py-sm border-t border-b border-surface-container">
+                    <div className="flex justify-between items-center gap-6 py-md border-t border-b border-surface-container">
                       <span className="font-body-md text-body-md">{m.draft.description}{m.draft.quantity > 1 ? ` × ${m.draft.quantity}` : ''}</span>
-                      <span className={`font-body-md text-body-md font-bold ${m.draft.type === 'sale' ? 'text-green-600' : 'text-red-600'}`}>{fmt(m.draft.amount)}</span>
+                      <span className={`text-[16px] font-bold ${m.draft.type === 'sale' ? 'text-green-600' : 'text-red-600'}`}>{fmt(m.draft.amount)}</span>
                     </div>
-                    <div className="flex gap-sm mt-lg">
-                      <button onClick={() => confirmYes(m)} className="flex-1 py-3 bg-primary text-white font-bold rounded-lg hover:opacity-90 active:scale-95 transition-all">Yes</button>
-                      <button onClick={() => confirmNo(m)} className="flex-1 py-3 border border-primary text-primary font-bold rounded-lg hover:bg-primary/5 active:scale-95 transition-all">No</button>
+                    <div className="flex gap-md mt-lg">
+                      <button onClick={() => confirmYes(m)} className="flex-1 py-3.5 bg-primary text-white font-bold rounded-xl hover:opacity-90 active:scale-95 transition-all">Yes, record it</button>
+                      <button onClick={() => confirmEdit(m)} className="px-5 py-3.5 border border-primary text-primary font-bold rounded-xl hover:bg-primary/5 active:scale-95 transition-all">Edit</button>
                     </div>
                   </div>
                 </div>
@@ -180,7 +198,7 @@ export default function Chat() {
             <button onClick={() => navigate('/inventory')} className="whitespace-nowrap px-lg py-2 bg-white border border-outline-variant rounded-full font-label-md text-label-md text-on-surface-variant hover:border-primary hover:text-primary transition-all shadow-sm">Check stock</button>
           </div>
           <div className="relative flex items-center group">
-            <input value={input} onChange={e => setInput(e.target.value)} onKeyDown={onKey} disabled={loading}
+            <input id="chat-input" value={input} onChange={e => setInput(e.target.value)} onKeyDown={onKey} disabled={loading}
               className="w-full h-14 pl-lg pr-16 bg-white border border-outline-variant rounded-full text-body-md focus:ring-2 focus:ring-primary focus:border-transparent transition-all shadow-lg group-hover:shadow-xl outline-none" placeholder="Type a message to Ozzy..." type="text" />
             <button onClick={() => send()} disabled={loading} className="absolute right-2 w-10 h-10 bg-primary text-white rounded-full flex items-center justify-center hover:scale-105 active:scale-90 transition-all shadow-sm disabled:opacity-50">
               <Icon name="send" />
