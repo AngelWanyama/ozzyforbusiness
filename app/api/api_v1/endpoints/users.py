@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_db, get_current_user
 from app.models.user import User, PlanType
-from app.schemas.user import UserPlan, UserUsage, UserUpgrade
+from app.schemas.user import UserPlan, UserUsage, UserUpgrade, UserProfile, UserProfileUpdate
 from datetime import datetime, timedelta
 
 router = APIRouter()
@@ -34,8 +34,26 @@ async def upgrade_user_plan(
     
     await db.commit()
     await db.refresh(current_user)
-    
+
     return {
         "plan_type": current_user.plan_type,
         "payment_expiry_date": current_user.payment_expiry_date
     }
+
+@router.get("/me", response_model=UserProfile)
+async def get_me(current_user: User = Depends(get_current_user)):
+    return current_user
+
+
+@router.patch("/me", response_model=UserProfile)
+async def update_me(
+    profile: UserProfileUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    data = profile.model_dump(exclude_unset=True)
+    for field, value in data.items():
+        setattr(current_user, field, value)
+    await db.commit()
+    await db.refresh(current_user)
+    return current_user

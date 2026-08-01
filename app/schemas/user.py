@@ -13,3 +13,17 @@ class UserUsage(BaseModel):
 
 class UserUpgrade(BaseModel):
     payment_ref: str # Reference from M-Pesa or Card payment
+
+class UserProfile(BaseModel):
+    business_name: Optional[str] = None
+    business_type: Optional[str] = None
+    currency: Optional[str] = None
+    phone_number: str
+
+    class Config:
+        from_attributes = True
+
+class UserProfileUpdate(BaseModel):
+    business_name: Optional[str] = None
+    business_type: Optional[str] = None
+    currency: Optional[str] = None
