@@ -11,11 +11,20 @@ interface Draft { type: 'sale' | 'expense'; description: string; amount: number;
 
 type OnboardStepKey =
   | 'owner_name' | 'business_name' | 'business_location'
-  | 'business_description' | 'years_in_business' | 'logo' | 'phone_confirm' | 'email';
+  | 'business_description' | 'years_in_business' | 'logo' | 'phone_confirm' | 'email'
+  | 'stock_items' | 'template_choice';
 
 const ONBOARD_STEPS: OnboardStepKey[] = [
   'owner_name', 'business_name', 'business_location',
   'business_description', 'years_in_business', 'logo', 'phone_confirm', 'email',
+  'stock_items', 'template_choice',
+];
+
+// The same three real templates offered on the Invoices page — kept in sync there.
+const ONBOARD_TEMPLATES = [
+  { label: 'Clean Minimal', value: 'clean_minimal' },
+  { label: 'Bold Branded', value: 'bold_branded' },
+  { label: 'Classic Ledger', value: 'classic_ledger' },
 ];
 
 interface Msg {
@@ -40,7 +49,7 @@ export default function Chat() {
   const [profile, setProfile] = useState<any>(null);
   const [onboardIndex, setOnboardIndex] = useState<number | null>(null); // null = not in onboarding
   const [onboardAnswers, setOnboardAnswers] = useState<Record<string, string>>({});
-  const [awaitingFieldFor, setAwaitingFieldFor] = useState<'contact_phone' | 'email' | null>(null);
+  const [awaitingFieldFor, setAwaitingFieldFor] = useState<'contact_phone' | 'email' | 'stock_items' | null>(null);
 
   const [scanning, setScanning] = useState(false);
   const [chips, setChips] = useState<string[]>(['Record a sale', 'Record an expense', 'Check stock']);
@@ -131,7 +140,11 @@ export default function Chat() {
       case 'phone_confirm':
         return `Should customers reach you on the number you used to log in${profile?.phone_number ? ` (${profile.phone_number})` : ''}, or a different one?`;
       case 'email':
-        return `Last thing — do you have an email to share, or shall we continue with just your phone?`;
+        return `Do you have an email to share, or shall we continue with just your phone?`;
+      case 'stock_items':
+        return `What products or stock does ${biz} currently have? You can list a few right now, or add them later in Inventory.`;
+      case 'template_choice':
+        return `Last thing — which style would you like for your invoices and receipts?`;
       default:
         return '';
     }
@@ -153,6 +166,16 @@ export default function Chat() {
       push({
         role: 'ozzy', kind: 'onboard-choice', text: question, stepKey,
         choices: [{ label: 'Add an email', value: 'add' }, { label: 'Just my phone is fine', value: 'skip' }],
+      });
+    } else if (stepKey === 'stock_items') {
+      push({
+        role: 'ozzy', kind: 'onboard-choice', text: question, stepKey,
+        choices: [{ label: 'Type them in now', value: 'type_now' }, { label: "I'll add them later", value: 'later' }],
+      });
+    } else if (stepKey === 'template_choice') {
+      push({
+        role: 'ozzy', kind: 'onboard-choice', text: question, stepKey,
+        choices: ONBOARD_TEMPLATES.map(t => ({ label: t.label, value: t.value })),
       });
     } else {
       push({ role: 'ozzy', kind: 'text', text: question });
@@ -213,12 +236,28 @@ export default function Chat() {
     } else if (stepKey === 'email') {
       if (value === 'skip') {
         push({ role: 'user', kind: 'text', text: 'Just my phone is fine' });
-        finishOnboarding(onboardAnswers);
+        askOnboardStep(idx + 1, onboardAnswers);
       } else {
         push({ role: 'user', kind: 'text', text: 'Add an email' });
         push({ role: 'ozzy', kind: 'text', text: "What's your email?" });
         setAwaitingFieldFor('email');
       }
+    } else if (stepKey === 'stock_items') {
+      if (value === 'later') {
+        push({ role: 'user', kind: 'text', text: "I'll add them later" });
+        askOnboardStep(idx + 1, onboardAnswers);
+      } else {
+        push({ role: 'user', kind: 'text', text: 'Type them in now' });
+        push({ role: 'ozzy', kind: 'text', text: 'Go ahead — list them separated by commas, like: dresses, shoes, bags.' });
+        setAwaitingFieldFor('stock_items');
+      }
+    } else if (stepKey === 'template_choice') {
+      const chosen = ONBOARD_TEMPLATES.find(t => t.value === value);
+      push({ role: 'user', kind: 'text', text: chosen?.label || value });
+      setLoading(true);
+      try { await patchMe({ receipt_template: value }); } catch { /* not fatal — they can change it later in Invoices */ }
+      setLoading(false);
+      askOnboardStep(idx + 1, onboardAnswers);
     }
   };
 
@@ -384,14 +423,23 @@ export default function Chat() {
         const field = awaitingFieldFor;
         setAwaitingFieldFor(null);
         setLoading(true);
-        try { await patchMe({ [field]: msg }); } catch { /* not fatal */ }
-        setLoading(false);
-        if (field === 'contact_phone') askOnboardStep(onboardIndex + 1, onboardAnswers);
-        else finishOnboarding(onboardAnswers);
+        if (field === 'stock_items') {
+          const items = msg.split(/[,\n]/).map(s => s.trim()).filter(Boolean);
+          try { await Promise.all(items.map(name => api.createItem({ name }))); } catch { /* best-effort — Inventory still lets them fix this up */ }
+          setLoading(false);
+          push({
+            role: 'ozzy', kind: 'text',
+            text: items.length ? `Got it — added ${items.length} item${items.length !== 1 ? 's' : ''} to your inventory!` : `No problem — you can add stock anytime in Inventory.`,
+          });
+        } else {
+          try { await patchMe({ [field]: msg }); } catch { /* not fatal */ }
+          setLoading(false);
+        }
+        askOnboardStep(onboardIndex + 1, onboardAnswers);
         return;
       }
       const stepKey = ONBOARD_STEPS[onboardIndex];
-      if (stepKey === 'logo' || stepKey === 'phone_confirm' || stepKey === 'email') {
+      if (stepKey === 'logo' || stepKey === 'phone_confirm' || stepKey === 'email' || stepKey === 'stock_items' || stepKey === 'template_choice') {
         push({ role: 'ozzy', kind: 'text', text: 'You can use the buttons above to answer that one 🙂' });
         return;
       }
