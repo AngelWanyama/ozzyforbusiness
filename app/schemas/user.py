@@ -21,8 +21,12 @@ class UserProfile(BaseModel):
     business_description: Optional[str] = None
     years_in_business: Optional[int] = None
     email: Optional[str] = None
+    logo_url: Optional[str] = None
+    notifications_enabled: bool = True
+    receipt_template: str = "clean_minimal"
     currency: Optional[str] = None
     phone_number: str
+    role: str
 
     class Config:
         from_attributes = True
@@ -34,4 +38,6 @@ class UserProfileUpdate(BaseModel):
     business_description: Optional[str] = None
     years_in_business: Optional[int] = None
     email: Optional[str] = None
+    notifications_enabled: Optional[bool] = None
+    receipt_template: Optional[str] = None
     currency: Optional[str] = None

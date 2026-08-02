@@ -15,3 +15,6 @@ venv/
 
 # Reports
 *.pdf
+
+# User-uploaded files (logos, receipt photos)
+uploads/
