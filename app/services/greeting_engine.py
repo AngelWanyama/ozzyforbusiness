@@ -15,6 +15,9 @@ EAT_OFFSET = timedelta(hours=3)
 
 LOW_STOCK_THRESHOLD = Decimal(5)  # no reorder-point field exists yet; a small fixed threshold is a reasonable stand-in
 WEEKLY_MILESTONE_PCT = 15.0       # how much this week must beat last week by to count as a "milestone"
+WEEKLY_MILESTONE_MIN_BASELINE = Decimal(10000)  # last week needs at least this much in real sales before a
+                                                 # % comparison against it means anything — otherwise a near-zero
+                                                 # prior week turns one small sale into a meaningless "+4900%"
 SLOW_DAY_RATIO = 0.7              # today-so-far must be under 70% of yesterday-at-this-same-time to count as "slow"
 
 
@@ -118,7 +121,10 @@ async def get_greeting(db: AsyncSession, user: User) -> Dict[str, Any]:
     hour = now_eat.hour
     time_of_day = "morning" if hour < 12 else ("midday" if hour < 17 else "evening")
 
-    weekly_pct = float((this_week_sales - last_week_sales) / last_week_sales * 100) if last_week_sales > 0 else None
+    weekly_pct = (
+        float((this_week_sales - last_week_sales) / last_week_sales * 100)
+        if last_week_sales >= WEEKLY_MILESTONE_MIN_BASELINE else None
+    )
     no_activity_today = today_sales == 0 and today_expenses == 0
 
     # Priority order: only one scenario wins per login.
