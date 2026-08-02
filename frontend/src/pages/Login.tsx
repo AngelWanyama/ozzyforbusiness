@@ -5,6 +5,7 @@ import { Phone, Lock, Eye, EyeOff, ChevronDown, Search, Loader2 } from 'lucide-r
 import ozzyLogo from '../assets/ozzy-logo.png';
 import ozzyHero from '../assets/ozzy-hero.jpg';
 import { AFRICA_COUNTRIES, type Country } from '../data/africaCountries';
+import api from '../api/client';
 
 export default function Login() {
   const [mode, setMode] = useState<'login' | 'register'>('login');
@@ -17,9 +18,20 @@ export default function Login() {
   const [countrySearch, setCountrySearch] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const { login, register } = useAuth();
+  const { login, register, fetchUserData } = useAuth();
   const navigate = useNavigate();
   const pickerRef = useRef<HTMLDivElement>(null);
+
+  // "Have an invite code?" flow — a Worker joins with a 6-digit code instead of registering.
+  const [showInvite, setShowInvite] = useState(false);
+  const [inviteStep, setInviteStep] = useState<'code' | 'password'>('code');
+  const [inviteCode, setInviteCode] = useState('');
+  const [invitePhone, setInvitePhone] = useState('');
+  const [invitePassword, setInvitePassword] = useState('');
+  const [inviteConfirmPassword, setInviteConfirmPassword] = useState('');
+  const [inviteShowPassword, setInviteShowPassword] = useState(false);
+  const [inviteError, setInviteError] = useState('');
+  const [inviteLoading, setInviteLoading] = useState(false);
 
   // Close the country picker when clicking anywhere outside it
   useEffect(() => {
@@ -79,6 +91,65 @@ export default function Login() {
     setConfirmPassword('');
   };
 
+  const resetInvite = () => {
+    setShowInvite(false);
+    setInviteStep('code');
+    setInviteCode('');
+    setInvitePhone('');
+    setInvitePassword('');
+    setInviteConfirmPassword('');
+    setInviteError('');
+  };
+
+  const handleCheckCode = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setInviteError('');
+    if (!/^\d{6}$/.test(inviteCode.trim())) {
+      setInviteError('Enter the 6-digit code exactly as it was given to you.');
+      return;
+    }
+    setInviteLoading(true);
+    try {
+      const res: any = await (api as any).request('/invites/check', {
+        method: 'POST',
+        body: JSON.stringify({ code: inviteCode.trim() }),
+      });
+      setInvitePhone(res?.phone_number || '');
+      setInviteStep('password');
+    } catch (err: any) {
+      setInviteError(err.message || 'Something went wrong. Please try again.');
+    } finally {
+      setInviteLoading(false);
+    }
+  };
+
+  const handleRedeem = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setInviteError('');
+    if (invitePassword !== inviteConfirmPassword) {
+      setInviteError('Passwords do not match');
+      return;
+    }
+    if (invitePassword.length < 6) {
+      setInviteError('Password must be at least 6 characters');
+      return;
+    }
+    setInviteLoading(true);
+    try {
+      const res: any = await (api as any).request('/invites/redeem', {
+        method: 'POST',
+        body: JSON.stringify({ code: inviteCode.trim(), password: invitePassword }),
+      });
+      api.setToken(res.access_token);
+      await fetchUserData();
+      navigate('/chat', { replace: true });
+    } catch (err: any) {
+      setInviteError(err.message || 'Something went wrong. Please try again.');
+    } finally {
+      setInviteLoading(false);
+    }
+  };
+
   const inputClass =
     'w-full h-[52px] pl-11 pr-4 border border-gray-200 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-800 dark:text-white placeholder:text-gray-400 hover:border-gray-300 dark:hover:border-gray-600 focus:border-[#3F0071] focus:ring-4 focus:ring-[#3F0071]/10 outline-none transition-[border-color,box-shadow] duration-150';
 
@@ -90,6 +161,117 @@ export default function Login() {
           {/* logo */}
           <img src={ozzyLogo} alt="Ozzy for Business" className="h-24 mb-8" />
 
+          {showInvite ? (
+            <>
+              <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">
+                {inviteStep === 'code' ? 'Enter your invite code' : 'Set your password'}
+              </h1>
+              <p className="text-gray-500 dark:text-gray-400 mb-8">
+                {inviteStep === 'code'
+                  ? 'Ask the business owner for the 6-digit code they generated for you.'
+                  : invitePhone
+                    ? `Joining as ${invitePhone}. Choose a password to finish setting up your account.`
+                    : 'Choose a password to finish setting up your account.'}
+              </p>
+
+              {inviteError && (
+                <div
+                  role="alert"
+                  className="fade-up bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 border border-red-100 dark:border-red-900/40 p-3 rounded-xl text-sm mb-5"
+                >
+                  {inviteError}
+                </div>
+              )}
+
+              {inviteStep === 'code' ? (
+                <form onSubmit={handleCheckCode} className="space-y-5">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Invite Code</label>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      maxLength={6}
+                      className={`${inputClass} pl-4 text-center tracking-[0.5em] text-lg font-semibold`}
+                      placeholder="000000"
+                      value={inviteCode}
+                      onChange={e => setInviteCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                      required
+                      autoFocus
+                    />
+                  </div>
+                  <button
+                    type="submit"
+                    disabled={inviteLoading}
+                    className="w-full h-14 bg-[#3F0071] hover:bg-[#2E0054] active:scale-[0.98] text-white font-semibold rounded-xl transition-[background-color,transform] duration-150 ease-out disabled:opacity-60 disabled:active:scale-100 flex items-center justify-center gap-2 shadow-sm shadow-[#3F0071]/20"
+                  >
+                    {inviteLoading && <Loader2 size={18} className="animate-spin" />}
+                    {inviteLoading ? 'Checking…' : 'Continue'}
+                  </button>
+                </form>
+              ) : (
+                <form onSubmit={handleRedeem} className="space-y-5">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Password</label>
+                    <div className="relative">
+                      <Lock size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                      <input
+                        type={inviteShowPassword ? 'text' : 'password'}
+                        className={`${inputClass} pr-11`}
+                        placeholder="At least 6 characters"
+                        value={invitePassword}
+                        onChange={e => setInvitePassword(e.target.value)}
+                        required
+                        minLength={6}
+                        autoFocus
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setInviteShowPassword(s => !s)}
+                        aria-label={inviteShowPassword ? 'Hide password' : 'Show password'}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors duration-150"
+                      >
+                        {inviteShowPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                      </button>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Confirm Password</label>
+                    <div className="relative">
+                      <Lock size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                      <input
+                        type={inviteShowPassword ? 'text' : 'password'}
+                        className={inputClass}
+                        placeholder="Re-enter your password"
+                        value={inviteConfirmPassword}
+                        onChange={e => setInviteConfirmPassword(e.target.value)}
+                        required
+                        minLength={6}
+                      />
+                    </div>
+                  </div>
+                  <button
+                    type="submit"
+                    disabled={inviteLoading}
+                    className="w-full h-14 bg-[#3F0071] hover:bg-[#2E0054] active:scale-[0.98] text-white font-semibold rounded-xl transition-[background-color,transform] duration-150 ease-out disabled:opacity-60 disabled:active:scale-100 flex items-center justify-center gap-2 shadow-sm shadow-[#3F0071]/20"
+                  >
+                    {inviteLoading && <Loader2 size={18} className="animate-spin" />}
+                    {inviteLoading ? 'Setting up…' : 'Join Business'}
+                  </button>
+                </form>
+              )}
+
+              <p className="mt-6 text-center text-sm text-gray-500 dark:text-gray-400">
+                <button
+                  type="button"
+                  onClick={resetInvite}
+                  className="font-semibold text-[#3F0071] dark:text-purple-300 hover:underline"
+                >
+                  Back to log in
+                </button>
+              </p>
+            </>
+          ) : (
+          <>
           <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">
             {mode === 'login' ? 'Welcome back' : 'Create your account'}
           </h1>
@@ -253,6 +435,20 @@ export default function Login() {
               {mode === 'login' ? 'Create one' : 'Log in'}
             </button>
           </p>
+
+          {mode === 'login' && (
+            <p className="mt-3 text-center text-sm text-gray-500 dark:text-gray-400">
+              <button
+                type="button"
+                onClick={() => setShowInvite(true)}
+                className="font-semibold text-[#3F0071] dark:text-purple-300 hover:underline"
+              >
+                Have an invite code?
+              </button>
+            </p>
+          )}
+          </>
+          )}
         </div>
       </div>
 

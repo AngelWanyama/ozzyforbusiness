@@ -126,6 +126,17 @@ export default function Settings() {
   const [toast, setToast] = useState<string | null>(null);
   const [supportModal, setSupportModal] = useState<'help' | 'contact' | 'about' | null>(null);
 
+  // Add Worker / Manage Access (Team & Access)
+  const [addWorkerOpen, setAddWorkerOpen] = useState(false);
+  const [workerPhoneInput, setWorkerPhoneInput] = useState('');
+  const [generatingCode, setGeneratingCode] = useState(false);
+  const [generateError, setGenerateError] = useState('');
+  const [generatedCode, setGeneratedCode] = useState<string | null>(null);
+  const [manageAccessOpen, setManageAccessOpen] = useState(false);
+  const [workersList, setWorkersList] = useState<any[]>([]);
+  const [workersLoading, setWorkersLoading] = useState(false);
+  const [workersError, setWorkersError] = useState('');
+
   useEffect(() => {
     document.documentElement.classList.toggle('dark', dark);
     localStorage.setItem('ozzy_dark', dark ? '1' : '0');
@@ -217,8 +228,65 @@ export default function Settings() {
 
   const handleLogout = () => { logout(); navigate('/login'); };
 
+  const openAddWorker = () => {
+    setAddWorkerOpen(true);
+    setGeneratedCode(null);
+    setGenerateError('');
+    setWorkerPhoneInput('');
+  };
+
+  const generateInviteCode = async () => {
+    setGeneratingCode(true);
+    setGenerateError('');
+    try {
+      const body: any = {};
+      if (workerPhoneInput.trim()) body.phone_number = workerPhoneInput.trim();
+      const res: any = await (api as any).request('/invites/generate', { method: 'POST', body: JSON.stringify(body) });
+      setGeneratedCode(res.code);
+    } catch (err: any) {
+      setGenerateError(err?.message || 'Could not generate an invite code. Please try again.');
+    } finally {
+      setGeneratingCode(false);
+    }
+  };
+
+  const copyInviteCode = async () => {
+    if (!generatedCode) return;
+    try {
+      await navigator.clipboard.writeText(generatedCode);
+      showToast('Code copied to clipboard.');
+    } catch {
+      showToast('Could not copy the code.');
+    }
+  };
+
+  const openManageAccess = async () => {
+    setManageAccessOpen(true);
+    setWorkersLoading(true);
+    setWorkersError('');
+    try {
+      const res: any = await (api as any).request('/invites/workers');
+      setWorkersList(Array.isArray(res) ? res : []);
+    } catch (err: any) {
+      setWorkersError(err?.message || 'Could not load your workers. Please try again.');
+    } finally {
+      setWorkersLoading(false);
+    }
+  };
+
   const p = phoneParts(phone);
   const displayName = businessName || (loading ? 'Loading...' : 'Your business');
+
+  if (!loading && role === 'worker') {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-xl text-center">
+        <div>
+          <Icon name="lock" className="text-outline text-[40px]" />
+          <p className="font-body-md text-body-md text-on-surface-variant mt-md">Settings are only available to the business owner.</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <main className="bg-surface-container-low min-h-screen">
@@ -322,8 +390,14 @@ export default function Settings() {
           <div className="bg-surface p-lg rounded-xl border border-outline-variant space-y-md">
             <h4 className="font-headline-md text-headline-md text-primary flex items-center gap-2 text-[24px]"><Icon name="group" /> Team &amp; Access</h4>
             <div className="flex flex-col">
-              <ComingSoonRow icon="person_add" label="Add Worker" onClick={() => comingSoon('Add Worker')} />
-              <ComingSoonRow icon="lock_person" label="Manage Access" onClick={() => comingSoon('Manage Access')} />
+              <button onClick={openAddWorker} className="flex items-center justify-between p-md hover:bg-surface-container-low transition-colors rounded-lg group">
+                <span className="font-label-md text-label-md text-on-surface-variant">Add Worker</span>
+                <span className="text-outline group-hover:translate-x-1 transition-transform text-[20px]"><Icon name="person_add" /></span>
+              </button>
+              <button onClick={openManageAccess} className="flex items-center justify-between p-md hover:bg-surface-container-low transition-colors rounded-lg group">
+                <span className="font-label-md text-label-md text-on-surface-variant">Manage Access</span>
+                <span className="text-outline group-hover:translate-x-1 transition-transform text-[20px]"><Icon name="lock_person" /></span>
+              </button>
               <ComingSoonRow icon="storefront" label="Shop Assistant Access" onClick={() => comingSoon('Shop Assistant Access')} />
             </div>
           </div>
@@ -502,6 +576,97 @@ export default function Settings() {
               </>
             )}
             <button onClick={() => setSupportModal(null)} className="mt-lg h-12 w-full flex items-center justify-center bg-primary text-white rounded-xl font-bold hover:opacity-90 transition-all active:scale-95 duration-200">
+              Close
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Add Worker modal */}
+      {addWorkerOpen && (
+        <div className="fixed inset-0 z-30 bg-black/40 flex items-end sm:items-center justify-center" onClick={() => setAddWorkerOpen(false)}>
+          <div className="bg-surface rounded-t-2xl sm:rounded-2xl p-xl w-full sm:max-w-[28rem] max-h-[80vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <h2 className="font-headline-md text-headline-md text-primary mb-md flex items-center gap-2"><Icon name="person_add" /> Add Worker</h2>
+            {!generatedCode ? (
+              <>
+                <p className="font-body-md text-body-md text-on-surface-variant mb-lg">
+                  Generate a 6-digit code for your new worker. They'll use it on the login screen to set their own
+                  password and join your business. The code works once and expires in 7 days.
+                </p>
+                <label className="font-label-md text-label-md text-on-surface-variant ml-1">Worker's phone number (optional)</label>
+                <div className="h-[52px] mt-1 mb-md bg-surface-container-low border border-outline-variant rounded-lg flex items-center px-md gap-sm focus-within:border-primary transition-colors">
+                  <Icon name="call" className="text-outline text-[20px]" />
+                  <input
+                    value={workerPhoneInput}
+                    onChange={e => setWorkerPhoneInput(e.target.value)}
+                    placeholder="e.g. +256700123456"
+                    className="bg-transparent border-none focus:ring-0 w-full font-body-md outline-none"
+                    type="tel"
+                  />
+                </div>
+                <p className="text-[12px] text-on-surface-variant mb-md">
+                  Recommended: a code generated without a phone number can't be completed by the worker yet — please
+                  add their number here so they can finish joining.
+                </p>
+                {generateError && <p className="text-red-600 text-sm mb-md">{generateError}</p>}
+                <button
+                  onClick={generateInviteCode}
+                  disabled={generatingCode}
+                  className="h-12 w-full flex items-center justify-center bg-primary text-white rounded-xl font-bold hover:opacity-90 transition-all active:scale-95 duration-200 disabled:opacity-50"
+                >
+                  {generatingCode ? 'Generating…' : 'Generate Code'}
+                </button>
+              </>
+            ) : (
+              <>
+                <p className="font-body-md text-body-md text-on-surface-variant mb-md">
+                  Share this code with your new worker — read it out or send it to them. It's valid for 7 days and works once.
+                </p>
+                <div className="flex items-center justify-center gap-md p-lg bg-surface-container-low rounded-xl mb-sm">
+                  <span className="font-headline-lg text-headline-lg text-primary tracking-[0.3em]">{generatedCode}</span>
+                  <button onClick={copyInviteCode} className="p-2 text-primary hover:bg-primary/10 rounded-lg transition-colors" aria-label="Copy code">
+                    <Icon name="content_copy" />
+                  </button>
+                </div>
+                <p className="text-[12px] text-on-surface-variant text-center mb-lg">Valid for 7 days · one-time use</p>
+              </>
+            )}
+            <button onClick={() => setAddWorkerOpen(false)} className="mt-lg h-12 w-full flex items-center justify-center border border-outline-variant text-on-surface rounded-xl font-bold hover:bg-surface-container-low transition-all active:scale-95 duration-200">
+              Close
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Manage Access modal */}
+      {manageAccessOpen && (
+        <div className="fixed inset-0 z-30 bg-black/40 flex items-end sm:items-center justify-center" onClick={() => setManageAccessOpen(false)}>
+          <div className="bg-surface rounded-t-2xl sm:rounded-2xl p-xl w-full sm:max-w-[28rem] max-h-[80vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <h2 className="font-headline-md text-headline-md text-primary mb-md flex items-center gap-2"><Icon name="lock_person" /> Manage Access</h2>
+            {workersLoading ? (
+              <p className="text-on-surface-variant text-center py-lg">Loading your workers…</p>
+            ) : workersError ? (
+              <p className="text-red-600 text-center py-lg">{workersError}</p>
+            ) : workersList.length === 0 ? (
+              <p className="text-on-surface-variant text-center py-lg">You haven't added any workers yet. Use "Add Worker" to invite one.</p>
+            ) : (
+              <div className="space-y-sm">
+                {workersList.map(w => (
+                  <div key={w.id} className="flex items-center gap-md p-md bg-surface-container-low rounded-lg">
+                    <div className="w-10 h-10 rounded-full bg-primary-container/30 flex items-center justify-center text-primary shrink-0">
+                      <Icon name="person" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-bold text-on-surface truncate">{w.phone_number || 'No phone number on file'}</p>
+                      <p className="text-[12px] text-on-surface-variant">
+                        Joined {w.created_at ? new Date(w.created_at).toLocaleDateString() : '—'}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            <button onClick={() => setManageAccessOpen(false)} className="mt-lg h-12 w-full flex items-center justify-center bg-primary text-white rounded-xl font-bold hover:opacity-90 transition-all active:scale-95 duration-200">
               Close
             </button>
           </div>

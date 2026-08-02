@@ -29,8 +29,10 @@ export default function Transactions() {
   const [range, setRange] = useState<DateRange>('all');
   const [filterOpen, setFilterOpen] = useState(false);
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [role, setRole] = useState('owner');
 
   useEffect(() => {
+    api.getMe().then((u: any) => setRole(u?.role || 'owner')).catch(() => {});
     api.getReportSummary().then((s: any) => { if (s?.currency) setCur(s.currency); }).catch(() => {});
     api.getTransactions()
       .then((res: any) => {
@@ -155,6 +157,9 @@ export default function Transactions() {
   );
 
   const rangeLabels: Record<DateRange, string> = { all: 'All time', today: 'Today', week: 'This week', month: 'This month' };
+  // Workers only ever get the last 7 days back from the server, so "This Month" / "All Time"
+  // would just silently return the same week of data with no explanation. Don't offer them.
+  const availableRanges: DateRange[] = role === 'worker' ? ['today', 'week'] : ['today', 'week', 'month', 'all'];
 
   return (
     <div className="min-h-screen p-md md:p-xl lg:p-xxl">
@@ -182,7 +187,7 @@ export default function Transactions() {
             {filterOpen && (
               <div className="absolute right-0 mt-2 w-48 bg-surface-container-lowest border border-outline-variant rounded-xl shadow-lg z-40 overflow-hidden">
                 <p className="px-lg pt-md pb-xs font-label-md text-label-md text-outline uppercase tracking-wider">Date range</p>
-                {(['today', 'week', 'month', 'all'] as DateRange[]).map(r => (
+                {availableRanges.map(r => (
                   <button
                     key={r}
                     onClick={() => { setRange(r); setFilterOpen(false); }}
@@ -195,6 +200,15 @@ export default function Transactions() {
             )}
           </div>
         </div>
+
+        {role === 'worker' && (
+          <div className="mb-lg flex items-start gap-2 p-md bg-surface-container-low rounded-lg">
+            <Icon name="info" className="text-outline mt-0.5" />
+            <p className="font-body-md text-body-md text-on-surface-variant">
+              As a worker, you can see activity from the last 7 days only.
+            </p>
+          </div>
+        )}
 
         {range !== 'all' && (
           <div className="mb-lg flex items-center gap-2">

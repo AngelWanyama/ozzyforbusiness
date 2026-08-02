@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from pydantic import BaseModel
-from app.api.deps import get_db, get_current_user
+from app.api.deps import get_db, get_current_user, require_owner
 from app.models.user import User
 from app.models.invite import Invite
 from app.schemas.invite import InviteCreate, InviteResponse
@@ -96,3 +96,22 @@ async def redeem_invite(data: InviteRedeem, db: AsyncSession = Depends(get_db)):
 
     token = create_access_token(str(worker.id))
     return {"access_token": token, "token_type": "bearer"}
+
+
+@router.get("/workers")
+async def list_workers(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_owner),
+):
+    """List the workers in the current owner's business. Owner-only."""
+    result = await db.execute(
+        select(User).where(
+            User.business_id == current_user.business_id,
+            User.role == "worker",
+        )
+    )
+    workers = result.scalars().all()
+    return [
+        {"id": str(w.id), "phone_number": w.phone_number, "created_at": w.created_at}
+        for w in workers
+    ]

@@ -1,5 +1,7 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
+import api from '../api/client';
 import ozzyLogo from '../assets/ozzy-icon-logo.png';
 
 function Icon({ name, className = '' }: { name: string; className?: string }) {
@@ -9,13 +11,21 @@ function Icon({ name, className = '' }: { name: string; className?: string }) {
 export default function AppLayout() {
   const navigate = useNavigate();
   const { logout } = useAuth();
+  const [role, setRole] = useState<string>('owner');
 
-  const nav = [
+  useEffect(() => {
+    api.getMe().then((u: any) => setRole(u?.role || 'owner')).catch(() => {});
+  }, []);
+
+  const allNav = [
     { to: '/chat', icon: 'chat', label: 'Chat' },
     { to: '/transactions', icon: 'history', label: 'Activities' },
     { to: '/reports', icon: 'analytics', label: 'Reports' },
     { to: '/settings', icon: 'settings', label: 'Settings' },
   ];
+
+  // Workers get a limited view: no Reports (profit/totals) and no Settings (business config).
+  const nav = role === 'worker' ? allNav.filter(n => n.to !== '/reports' && n.to !== '/settings') : allNav;
 
   const sideLink = ({ isActive }: { isActive: boolean }) =>
     `w-full flex items-center gap-3 px-4 py-3 rounded-lg font-bold ease-out-expo duration-200 ${
