@@ -47,6 +47,12 @@ class NLPParserService:
         3. If the entry is about stock levels or adding stock, intent is "inventory".
         4. If the user asks a question about their data, intent is "query".
         5. For multi-word items, capture the full name (e.g., "blue dress").
+        6. Airtime and mobile money float work like any other product the owner resells — judge the
+           direction of money, not just the word "airtime": if the owner BOUGHT, topped up, or
+           restocked airtime/float (money going OUT to the network), intent is "expense", category
+           "Supplies". If the owner SOLD airtime to a customer (money coming IN), intent is "sale".
+           When an entry mentions both (e.g. buying stock to then sell it), classify by whichever verb
+           describes what actually happened in this entry, not the general nature of the business.
 
         Examples:
         User Entry: "paid 20000 for water"
@@ -54,6 +60,12 @@ class NLPParserService:
 
         User Entry: "sold 3 bags of sugar for 15000"
         Output: {{"intent": "sale", "amount": 15000, "item": "sugar", "category": "Sales Revenue", "quantity": 3, "currency": "{user_currency}", "transaction_date": "{datetime.now().strftime('%Y-%m-%d')}", "confidence": 0.9}}
+
+        User Entry: "bought airtime 50000"
+        Output: {{"intent": "expense", "amount": 50000, "item": "airtime", "category": "Supplies", "quantity": 1, "currency": "{user_currency}", "transaction_date": "{datetime.now().strftime('%Y-%m-%d')}", "confidence": 0.9}}
+
+        User Entry: "sold airtime 2000"
+        Output: {{"intent": "sale", "amount": 2000, "item": "airtime", "category": "Sales Revenue", "quantity": 1, "currency": "{user_currency}", "transaction_date": "{datetime.now().strftime('%Y-%m-%d')}", "confidence": 0.9}}
 
         Only return the JSON. No preamble.
         """
@@ -81,7 +93,7 @@ class NLPParserService:
         """
         text = text.lower()
         intent = "sale"
-        if "paid" in text or "bought" in text or "expense" in text or "rent" in text:
+        if "paid" in text or "bought" in text or "expense" in text or "rent" in text or "topped up" in text or "top up" in text or "restock" in text:
             intent = "expense"
         elif "stock" in text or "inventory" in text:
             intent = "inventory"
