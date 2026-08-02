@@ -595,18 +595,17 @@ export default function Settings() {
               <>
                 <h2 className="font-headline-md text-headline-md text-primary mb-md flex items-center gap-2"><Icon name="mail" /> Contact Support</h2>
                 <p className="font-body-md text-body-md text-on-surface-variant">
-                  A dedicated support inbox hasn't been set up yet, so there isn't a real address to give you here.
-                  In the meantime, please reach out to whoever set up your Ozzy account for help — this panel will be
-                  updated with a real contact option soon.
+                  Reach us at <a href="mailto:ozzyafricaug@gmail.com" className="text-primary font-bold hover:underline">ozzyafricaug@gmail.com</a> and we'll get back to you.
                 </p>
+                {/* TODO: add a WhatsApp contact number here once Angel confirms the real number to use. */}
               </>
             )}
             {supportModal === 'about' && (
               <>
                 <h2 className="font-headline-md text-headline-md text-primary mb-md flex items-center gap-2"><Icon name="info" /> About Ozzy</h2>
                 <p className="font-body-md text-body-md text-on-surface-variant mb-sm">
-                  Ozzy for Business is an AI-powered assistant that helps African small businesses manage sales, expenses,
-                  and reports as easily as chatting on WhatsApp — built for Uganda first.
+                  Ozzy for Business is a product of Ozzy Africa Technologies Ltd, a legally registered tech company in Uganda.
+                  Ozzy for Business is an AI-powered financial management platform for African businesses.
                 </p>
                 <p className="text-[12px] text-on-surface-variant">Version 1.0</p>
               </>
