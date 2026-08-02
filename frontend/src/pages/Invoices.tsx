@@ -160,6 +160,15 @@ function InvoicePreviewPanel({ invoice, onBack, onStatusUpdate, onDeleted }: {
   invoice: Invoice; onBack: () => void; onStatusUpdate: (s: InvoiceStatus) => void; onDeleted: () => void;
 }) {
   const [saving, setSaving] = useState(false);
+  const [businessName, setBusinessName] = useState('My Business');
+  const [businessLocation, setBusinessLocation] = useState('');
+
+  useEffect(() => {
+    api.getMe().then((u: any) => {
+      setBusinessName(u?.business_name || 'My Business');
+      setBusinessLocation(u?.business_location || '');
+    }).catch(() => {});
+  }, []);
 
   const handlePdf = async () => {
     try {
@@ -213,59 +222,8 @@ function InvoicePreviewPanel({ invoice, onBack, onStatusUpdate, onDeleted }: {
         </div>
       </div>
 
-      {/* Invoice Render */}
-      <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 overflow-hidden shadow-sm">
-        <div className="bg-gradient-to-r from-[#0D9488] to-[#0B7A70] p-5 text-white">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm opacity-80">INVOICE</p>
-              <p className="text-lg font-bold">{invoice.invoice_number}</p>
-            </div>
-            <div className="text-right text-sm">
-              <p className="opacity-80">Date: {new Date(invoice.created_at).toLocaleDateString()}</p>
-              <p className="opacity-80">Due: {invoice.due_date ? new Date(invoice.due_date).toLocaleDateString() : 'N/A'}</p>
-            </div>
-          </div>
-        </div>
-        <div className="p-5">
-          <div className="mb-4">
-            <p className="text-xs text-gray-400 uppercase tracking-wider">Bill To</p>
-            <p className="font-semibold text-gray-900 dark:text-white">{invoice.customer_name}</p>
-            {invoice.customer_phone && <p className="text-sm text-gray-500">{invoice.customer_phone}</p>}
-            {invoice.customer_email && <p className="text-sm text-gray-500">{invoice.customer_email}</p>}
-            {invoice.customer_address && <p className="text-sm text-gray-500">{invoice.customer_address}</p>}
-          </div>
-          <table className="w-full text-sm mb-4">
-            <thead>
-              <tr className="border-b border-gray-100 dark:border-gray-700">
-                <th className="text-left py-2 text-gray-500 font-medium">Item</th>
-                <th className="text-right py-2 text-gray-500 font-medium">Qty</th>
-                <th className="text-right py-2 text-gray-500 font-medium">Price</th>
-                <th className="text-right py-2 text-gray-500 font-medium">Total</th>
-              </tr>
-            </thead>
-            <tbody>
-              {(invoice.items || []).map((item: any) => (
-                <tr key={item.id} className="border-b border-gray-50 dark:border-gray-700/50">
-                  <td className="py-2 text-gray-800 dark:text-gray-200">{item.description}</td>
-                  <td className="py-2 text-right text-gray-600 dark:text-gray-400">{item.quantity}</td>
-                  <td className="py-2 text-right text-gray-600 dark:text-gray-400">{fmt(item.unit_price, invoice.currency)}</td>
-                  <td className="py-2 text-right font-medium text-gray-900 dark:text-white">{fmt(item.total_price, invoice.currency)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          <div className="border-t border-gray-100 dark:border-gray-700 pt-3 space-y-1 text-sm">
-            <div className="flex justify-between text-lg font-bold"><span className="text-gray-900 dark:text-white">Total</span><span className="text-[#0D9488]">{fmt(invoice.total_amount, invoice.currency)}</span></div>
-          </div>
-          {invoice.notes && (
-            <div className="mt-4 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-xl">
-              <p className="text-xs text-gray-500 mb-1">Notes</p>
-              <p className="text-sm text-gray-700 dark:text-gray-300">{invoice.notes}</p>
-            </div>
-          )}
-        </div>
-      </div>
+      {/* Invoice Render — mirrors the real PDF templates in app/services/invoice_pdf.py */}
+      <InvoiceTemplatePreview invoice={invoice} businessName={businessName} businessLocation={businessLocation} />
 
       {/* ExportBar */}
       <div className="sticky bottom-0 mt-4 bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 p-3 shadow-lg">
@@ -276,6 +234,194 @@ function InvoicePreviewPanel({ invoice, onBack, onStatusUpdate, onDeleted }: {
           <ExportBtn icon={<Mail size={16} />} label="Email" onClick={handleEmail} />
           <ExportBtn icon={<Trash2 size={16} />} label="Delete" onClick={handleDelete} />
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── InvoiceTemplatePreview ───────────────────────────────────────────────────
+// Renders the on-screen preview to match whichever of the 3 templates the invoice
+// was generated with, using the same colors/layout as the real PDFs in
+// app/services/invoice_pdf.py, so switching templates changes what this looks like.
+function InvoiceTemplatePreview({ invoice, businessName, businessLocation }: {
+  invoice: Invoice; businessName: string; businessLocation: string;
+}) {
+  const docTitle = invoice.status === 'paid' ? 'RECEIPT' : 'INVOICE';
+  const dateStr = new Date(invoice.created_at).toLocaleDateString();
+  const dueStr = invoice.due_date ? new Date(invoice.due_date).toLocaleDateString() : null;
+  const items = invoice.items || [];
+
+  if (invoice.template === 'bold_branded') {
+    return (
+      <div className="rounded-2xl border border-gray-100 dark:border-gray-700 overflow-hidden shadow-sm bg-white">
+        <div className="bg-gradient-to-br from-[#3F0071] to-[#2E0054] p-6 text-white">
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="text-2xl font-bold">{docTitle}</p>
+              <p className="text-sm opacity-80">#{invoice.invoice_number}</p>
+            </div>
+            <div className="text-right">
+              <p className="font-bold text-lg">{businessName}</p>
+              {businessLocation && <p className="text-xs font-bold text-[#1EBFA3] uppercase tracking-wide">{businessLocation}</p>}
+            </div>
+          </div>
+        </div>
+        <div className="p-6">
+          <div className="flex items-start justify-between mb-3">
+            <div>
+              <p className="text-xs font-bold text-[#3F0071] uppercase tracking-wider mb-1">Bill To</p>
+              <p className="font-bold text-gray-900">{invoice.customer_name}</p>
+              {invoice.customer_phone && <p className="text-sm text-gray-500">{invoice.customer_phone}</p>}
+              {invoice.customer_email && <p className="text-sm text-gray-500">{invoice.customer_email}</p>}
+              {invoice.customer_address && <p className="text-sm text-gray-500">{invoice.customer_address}</p>}
+            </div>
+            <div className="text-right text-sm text-gray-500">
+              <p>Date: {dateStr}</p>
+              {dueStr && <p>Due: {dueStr}</p>}
+            </div>
+          </div>
+          <div className="h-[3px] bg-[#1EBFA3] rounded-full mb-3" />
+          <table className="w-full text-sm mb-3">
+            <thead>
+              <tr>
+                <th className="text-left py-2 text-[#3F0071] font-bold text-xs uppercase">Item</th>
+                <th className="text-right py-2 text-[#3F0071] font-bold text-xs uppercase">Qty</th>
+                <th className="text-right py-2 text-[#3F0071] font-bold text-xs uppercase">Price</th>
+                <th className="text-right py-2 text-[#3F0071] font-bold text-xs uppercase">Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((item: any) => (
+                <tr key={item.id} className="border-b border-gray-50">
+                  <td className="py-2 text-gray-800">{item.description}</td>
+                  <td className="py-2 text-right text-gray-600">{item.quantity}</td>
+                  <td className="py-2 text-right text-gray-600">{fmt(item.unit_price, invoice.currency)}</td>
+                  <td className="py-2 text-right font-medium text-gray-900">{fmt(item.total_price, invoice.currency)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <div className="bg-[#1EBFA3] rounded-lg px-4 py-3 flex justify-between items-center">
+            <span className="text-white font-bold">Total</span>
+            <span className="text-white font-bold text-lg">{fmt(invoice.total_amount, invoice.currency)}</span>
+          </div>
+          {invoice.notes && (
+            <div className="mt-4 p-3 bg-gray-50 rounded-xl">
+              <p className="text-xs text-gray-500 mb-1">Notes</p>
+              <p className="text-sm text-gray-700">{invoice.notes}</p>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  if (invoice.template === 'classic_ledger') {
+    return (
+      <div className="rounded-2xl border-2 border-[#5C4326] overflow-hidden shadow-sm" style={{ backgroundColor: '#FBF7F0' }}>
+        <div className="p-6 font-mono text-[#5C4326]">
+          <div className="text-center border-b-2 border-[#5C4326] pb-3 mb-3">
+            <p className="font-serif font-bold text-xl uppercase tracking-wide">{businessName}</p>
+            {businessLocation && <p className="text-xs opacity-80">{businessLocation}</p>}
+          </div>
+          <p className="text-center font-bold text-sm mb-1">{docTitle} #{invoice.invoice_number}</p>
+          <p className="text-center text-xs opacity-80 mb-4">Date: {dateStr}{dueStr ? ` · Due: ${dueStr}` : ''}</p>
+
+          <p className="text-xs font-bold mb-2">CUSTOMER: {invoice.customer_name.toUpperCase()}</p>
+          {(invoice.customer_phone || invoice.customer_email || invoice.customer_address) && (
+            <p className="text-xs opacity-80 mb-2">{[invoice.customer_phone, invoice.customer_email, invoice.customer_address].filter(Boolean).join(' · ')}</p>
+          )}
+          <div className="border-t border-[#5C4326]/40 mb-2" />
+
+          <table className="w-full text-xs mb-2">
+            <thead>
+              <tr className="border-b border-[#5C4326]/40">
+                <th className="text-left py-1 font-bold">ITEM</th>
+                <th className="text-right py-1 font-bold">QTY</th>
+                <th className="text-right py-1 font-bold">PRICE</th>
+                <th className="text-right py-1 font-bold">TOTAL</th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((item: any) => (
+                <tr key={item.id}>
+                  <td className="py-1">{item.description}</td>
+                  <td className="py-1 text-right">{item.quantity}</td>
+                  <td className="py-1 text-right">{fmt(item.unit_price, invoice.currency)}</td>
+                  <td className="py-1 text-right">{fmt(item.total_price, invoice.currency)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          <div className="border-t-2 border-[#5C4326] mt-2 pt-2 text-center font-bold">
+            TOTAL: {fmt(invoice.total_amount, invoice.currency)}
+          </div>
+          {invoice.notes && <p className="text-xs italic mt-3 opacity-90">Note: {invoice.notes}</p>}
+          <p className="text-center text-[10px] opacity-70 mt-4">Thank you for your business!</p>
+        </div>
+      </div>
+    );
+  }
+
+  // clean_minimal (default)
+  return (
+    <div className="rounded-2xl border border-gray-100 dark:border-gray-700 overflow-hidden shadow-sm bg-white">
+      <div className="h-1.5 bg-[#3F0071]" />
+      <div className="p-6">
+        <div className="flex items-start justify-between mb-3">
+          <div>
+            <p className="text-2xl font-bold text-gray-900">{docTitle}</p>
+            <p className="text-sm text-gray-500">#{invoice.invoice_number}</p>
+          </div>
+          <div className="text-right">
+            <p className="font-semibold text-gray-900">{businessName}</p>
+            {businessLocation && <p className="text-sm text-gray-500">{businessLocation}</p>}
+          </div>
+        </div>
+        <div className="border-t border-gray-200 my-3" />
+        <div className="flex items-start justify-between mb-4">
+          <div>
+            <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Bill To</p>
+            <p className="font-semibold text-gray-900">{invoice.customer_name}</p>
+            {invoice.customer_phone && <p className="text-sm text-gray-500">{invoice.customer_phone}</p>}
+            {invoice.customer_email && <p className="text-sm text-gray-500">{invoice.customer_email}</p>}
+            {invoice.customer_address && <p className="text-sm text-gray-500">{invoice.customer_address}</p>}
+          </div>
+          <div className="text-right text-sm text-gray-500">
+            <p>Date: {dateStr}</p>
+            {dueStr && <p>Due: {dueStr}</p>}
+          </div>
+        </div>
+        <table className="w-full text-sm mb-4">
+          <thead>
+            <tr className="border-b border-gray-100">
+              <th className="text-left py-2 text-gray-500 font-medium">Item</th>
+              <th className="text-right py-2 text-gray-500 font-medium">Qty</th>
+              <th className="text-right py-2 text-gray-500 font-medium">Price</th>
+              <th className="text-right py-2 text-gray-500 font-medium">Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((item: any) => (
+              <tr key={item.id} className="border-b border-gray-50">
+                <td className="py-2 text-gray-800">{item.description}</td>
+                <td className="py-2 text-right text-gray-600">{item.quantity}</td>
+                <td className="py-2 text-right text-gray-600">{fmt(item.unit_price, invoice.currency)}</td>
+                <td className="py-2 text-right font-medium text-gray-900">{fmt(item.total_price, invoice.currency)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <div className="border-t border-gray-200 pt-3">
+          <div className="flex justify-between text-lg font-bold text-gray-900"><span>Total</span><span>{fmt(invoice.total_amount, invoice.currency)}</span></div>
+        </div>
+        {invoice.notes && (
+          <div className="mt-4 p-3 bg-gray-50 rounded-xl">
+            <p className="text-xs text-gray-500 mb-1">Notes</p>
+            <p className="text-sm text-gray-700">{invoice.notes}</p>
+          </div>
+        )}
       </div>
     </div>
   );
