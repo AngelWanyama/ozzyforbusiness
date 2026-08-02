@@ -20,10 +20,13 @@ class UserProfile(BaseModel):
     owner_name: Optional[str] = None
     business_description: Optional[str] = None
     years_in_business: Optional[int] = None
+    business_location: Optional[str] = None
     email: Optional[str] = None
+    contact_phone: Optional[str] = None
     logo_url: Optional[str] = None
     notifications_enabled: bool = True
     receipt_template: str = "clean_minimal"
+    onboarding_completed: bool = False
     currency: Optional[str] = None
     phone_number: str
     role: str
@@ -37,7 +40,10 @@ class UserProfileUpdate(BaseModel):
     owner_name: Optional[str] = None
     business_description: Optional[str] = None
     years_in_business: Optional[int] = None
+    business_location: Optional[str] = None
     email: Optional[str] = None
+    contact_phone: Optional[str] = None
     notifications_enabled: Optional[bool] = None
     receipt_template: Optional[str] = None
+    onboarding_completed: Optional[bool] = None
     currency: Optional[str] = None

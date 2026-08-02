@@ -21,10 +21,13 @@ class User(Base):
     owner_name = Column(String, nullable=True)
     business_description = Column(String, nullable=True)
     years_in_business = Column(Integer, nullable=True)
+    business_location = Column(String, nullable=True)
     email = Column(String, nullable=True)
+    contact_phone = Column(String, nullable=True)  # optional alternate contact number, distinct from the login phone_number
     logo_url = Column(String, nullable=True)
     notifications_enabled = Column(Boolean, default=True, nullable=False)
     receipt_template = Column(String, default="clean_minimal", nullable=False)
+    onboarding_completed = Column(Boolean, default=False, nullable=False)
     currency = Column(String, default="UGX")
     role = Column(String, default="owner", nullable=False)  # "owner" or "worker"
     business_id = Column(UUID(as_uuid=True), nullable=True, index=True)
