@@ -14,6 +14,7 @@ interface Txn {
   category?: string;
   amount?: number | string;
   quantity?: number;
+  transaction_date?: string;
   created_at?: string;
   date?: string;
 }
@@ -46,7 +47,15 @@ export default function Transactions() {
   const isInflow = (t: Txn) => (t.type || t.intent) === 'sale';
   const titleOf = (t: Txn) => t.description || t.item || 'Transaction';
   const catOf = (t: Txn) => t.category || '';
-  const dateOf = (t: Txn) => new Date(t.created_at || t.date || Date.now());
+  // The backend sends naive UTC timestamps with no "Z"/offset (e.g. "2026-08-02T17:13:31"), which
+  // JavaScript's Date parser otherwise treats as *local* time rather than UTC — silently skewing
+  // every timestamp by the browser's UTC offset. Appending "Z" when it's missing fixes that.
+  const dateOf = (t: Txn) => {
+    const raw = t.transaction_date || t.created_at || t.date;
+    if (!raw) return new Date();
+    const hasTz = /Z$|[+-]\d{2}:?\d{2}$/.test(raw);
+    return new Date(hasTz ? raw : `${raw}Z`);
+  };
   const amountOf = (t: Txn) => Number(t.amount || 0);
   const qtyOf = (t: Txn) => Number(t.quantity || 0);
   const money = (n: number) => `${cur} ${Number(n || 0).toLocaleString()}`;
@@ -79,11 +88,15 @@ export default function Transactions() {
     return haystack.includes(q);
   };
 
+  // Day boundaries computed in UTC, not the browser's local timezone — this matches how
+  // app/api/api_v1/endpoints/reports.py computes "today"/"this week"/"this month" server-side
+  // (datetime.utcnow()), so Activities and Reports agree on what counts as "today" instead of
+  // each using a different clock.
   const now = new Date();
-  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const startOfToday = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
   const startOfYesterday = startOfToday - 86400000;
   const startOfWeek = startOfToday - 6 * 86400000;
-  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+  const startOfMonth = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1);
 
   const matchesRange = (t: Txn) => {
     const d = dateOf(t).getTime();
