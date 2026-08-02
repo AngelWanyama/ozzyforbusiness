@@ -12,6 +12,9 @@ class Settings(BaseSettings):
     DATABASE_URL: Optional[str] = None
     GEMINI_API_KEY: Optional[str] = None
     GROQ_API_KEY: Optional[str] = None
+    # Groq's vision-capable model changes fairly often (preview models get swapped out) —
+    # kept as a setting rather than hardcoded so it can be updated without a code change.
+    GROQ_VISION_MODEL: str = "qwen/qwen3.6-27b"
     
     # Security
     SECRET_KEY: str = "super-secret-key-change-this-in-production"

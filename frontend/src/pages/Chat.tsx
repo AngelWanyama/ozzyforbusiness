@@ -42,8 +42,11 @@ export default function Chat() {
   const [onboardAnswers, setOnboardAnswers] = useState<Record<string, string>>({});
   const [awaitingFieldFor, setAwaitingFieldFor] = useState<'contact_phone' | 'email' | null>(null);
 
+  const [scanning, setScanning] = useState(false);
+
   const endRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const receiptInputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
 
   const cur = summary?.currency || 'UGX';
@@ -69,6 +72,31 @@ export default function Chat() {
     });
     if (!res.ok) throw new Error('Upload failed');
     return res.json();
+  };
+
+  const scanReceiptFile = async (file: File) => {
+    const token = localStorage.getItem('ozzy_access_token');
+    const base = (import.meta as any).env?.VITE_API_URL || 'http://localhost:8000/api/v1';
+    const form = new FormData();
+    form.append('file', file);
+    const res = await fetch(`${base}/chat/scan-receipt`, {
+      method: 'POST',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: form,
+    });
+    if (!res.ok) throw new Error('Scan failed');
+    return res.json();
+  };
+
+  // "today" / "yesterday" / weekday name / full date — whichever reads most naturally.
+  const describeDate = (isoDate: string): string => {
+    const d = new Date(isoDate + 'T00:00:00');
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const diffDays = Math.round((today.getTime() - d.getTime()) / 86400000);
+    if (diffDays === 0) return 'today';
+    if (diffDays === 1) return 'yesterday';
+    if (diffDays > 1 && diffDays < 7) return `on ${d.toLocaleDateString([], { weekday: 'long' })}`;
+    return `on ${d.toLocaleDateString()}`;
   };
 
   // ─── Onboarding conversation ────────────────────────────────────────────────
@@ -214,6 +242,50 @@ export default function Chat() {
     setMessages(p => p.filter(x => x.id !== m.id));
     push({ role: 'user', kind: 'text', text: 'Skip for now' });
     askOnboardStep(onboardIndex! + 1, onboardAnswers);
+  };
+
+  const handleReceiptFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+
+    if (!['image/png', 'image/jpeg', 'image/jpg', 'image/webp'].includes(file.type)) {
+      push({ role: 'ozzy', kind: 'text', text: 'That needs to be a PNG, JPEG, or WEBP photo — could you try another one?' });
+      return;
+    }
+    if (file.size > 8 * 1024 * 1024) {
+      push({ role: 'ozzy', kind: 'text', text: 'That photo is a bit large — please use one under 8MB.' });
+      return;
+    }
+
+    push({ role: 'user', kind: 'text', text: `📷 ${file.name}` });
+    setScanning(true);
+    try {
+      const scan: any = await scanReceiptFile(file);
+      const amount = Number(scan.amount) || 0;
+      if (amount <= 0) {
+        push({ role: 'ozzy', kind: 'text', text: `I had trouble reading that receipt clearly. Could you try a clearer photo, or just type the expense instead?` });
+        return;
+      }
+      const when = describeDate(scan.transaction_date);
+      const vendorPart = scan.vendor && scan.vendor !== 'Unknown' ? ` at ${scan.vendor}` : '';
+      push({
+        role: 'ozzy', kind: 'text',
+        text: `I see ${fmt(amount)} spent on ${scan.item}${vendorPart} ${when}, is that right?`,
+      });
+      showConfirm({
+        type: 'expense',
+        description: scan.item || 'expense',
+        amount,
+        quantity: 1,
+        category: scan.category,
+        original: `${scan.item} ${amount}`,
+      });
+    } catch {
+      push({ role: 'ozzy', kind: 'text', text: `Sorry, I couldn't read that receipt. Please try again or type the expense instead.` });
+    } finally {
+      setScanning(false);
+    }
   };
 
   // ─── Setup ───────────────────────────────────────────────────────────────────
@@ -429,11 +501,12 @@ export default function Chat() {
             </div>
           ))}
 
-          {loading && (
+          {(loading || scanning) && (
             <div className="flex items-center gap-2 text-outline">
               <div className="w-2 h-2 bg-outline rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
               <div className="w-2 h-2 bg-outline rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
               <div className="w-2 h-2 bg-outline rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+              {scanning && <span className="text-sm">Reading your receipt…</span>}
             </div>
           )}
           <div ref={endRef} />
@@ -441,6 +514,7 @@ export default function Chat() {
       </section>
 
       <input ref={fileInputRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={handleLogoFileChange} />
+      <input ref={receiptInputRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={handleReceiptFileChange} />
 
       {/* Input */}
       <div className="absolute bottom-0 left-0 w-full p-lg md:px-margin-desktop bg-gradient-to-t from-surface via-surface to-transparent pt-xxl">
@@ -449,6 +523,9 @@ export default function Chat() {
             <div className="flex gap-sm mb-md overflow-x-auto pb-2 no-scrollbar">
               <button onClick={() => setInput('Sold ')} className="whitespace-nowrap px-lg py-2 bg-white border border-outline-variant rounded-full font-label-md text-label-md text-on-surface-variant hover:border-primary hover:text-primary transition-all shadow-sm">Record a sale</button>
               <button onClick={() => setInput('Paid ')} className="whitespace-nowrap px-lg py-2 bg-white border border-outline-variant rounded-full font-label-md text-label-md text-on-surface-variant hover:border-primary hover:text-primary transition-all shadow-sm">Record an expense</button>
+              <button onClick={() => receiptInputRef.current?.click()} disabled={scanning} className="whitespace-nowrap flex items-center gap-1 px-lg py-2 bg-white border border-outline-variant rounded-full font-label-md text-label-md text-on-surface-variant hover:border-primary hover:text-primary transition-all shadow-sm disabled:opacity-50">
+                <Icon name="photo_camera" className="text-[16px]" /> {scanning ? 'Reading receipt…' : 'Scan a receipt'}
+              </button>
               <button onClick={() => navigate('/inventory')} className="whitespace-nowrap px-lg py-2 bg-white border border-outline-variant rounded-full font-label-md text-label-md text-on-surface-variant hover:border-primary hover:text-primary transition-all shadow-sm">Check stock</button>
             </div>
           )}

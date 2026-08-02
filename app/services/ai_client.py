@@ -54,5 +54,39 @@ class AIClient:
             logger.error(f"Groq call failed: {e}")
             return None
 
+    def generate_from_image(
+        self,
+        prompt: str,
+        image_base64: str,
+        mime_type: str = "image/jpeg",
+        model: Optional[str] = None,
+        json_mode: bool = False,
+    ) -> Optional[str]:
+        """Same as generate(), but sends an image alongside the text prompt to a vision-capable model."""
+        if not self._client:
+            return None
+        try:
+            vision_model = model or getattr(settings, "GROQ_VISION_MODEL", "qwen/qwen3.6-27b")
+            kwargs = {}
+            if json_mode:
+                kwargs["response_format"] = {"type": "json_object"}
+
+            response = self._client.chat.completions.create(
+                model=vision_model,
+                messages=[{
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt},
+                        {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{image_base64}"}},
+                    ],
+                }],
+                **kwargs,
+            )
+            content = response.choices[0].message.content
+            return content.strip() if content else None
+        except Exception as e:
+            logger.error(f"Groq vision call failed: {e}")
+            return None
+
 
 ai_client = AIClient()
