@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta
 from decimal import Decimal
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.transaction import Transaction, TransactionType
@@ -27,6 +27,31 @@ async def _sum_amount(db: AsyncSession, business_id, tx_type: TransactionType, s
     )
     result = await db.execute(stmt)
     return result.scalar() or Decimal(0)
+
+
+async def _count_transactions(db: AsyncSession, business_id, tx_type: TransactionType, start: datetime, end: datetime) -> int:
+    stmt = select(func.count()).select_from(Transaction).where(
+        Transaction.business_id == business_id,
+        Transaction.type == tx_type,
+        Transaction.transaction_date >= start,
+        Transaction.transaction_date <= end,
+    )
+    result = await db.execute(stmt)
+    return result.scalar() or 0
+
+
+async def _biggest_expense_category(db: AsyncSession, business_id, start: datetime, end: datetime) -> Optional[str]:
+    stmt = select(
+        func.coalesce(Transaction.category, "Other"), func.sum(Transaction.amount)
+    ).where(
+        Transaction.business_id == business_id,
+        Transaction.type == TransactionType.EXPENSE,
+        Transaction.transaction_date >= start,
+        Transaction.transaction_date <= end,
+    ).group_by(func.coalesce(Transaction.category, "Other")).order_by(func.sum(Transaction.amount).desc()).limit(1)
+    result = await db.execute(stmt)
+    row = result.first()
+    return row[0] if row else None
 
 
 def _fmt(currency: str, amount) -> str:
@@ -142,17 +167,28 @@ async def get_greeting(db: AsyncSession, user: User) -> Dict[str, Any]:
         }
 
     if time_of_day == "morning":
+        yesterday_sale_count = await _count_transactions(db, business_id, TransactionType.SALE, yesterday_start_utc, today_start_utc)
         low_stock_line = f" You're running low on {low_stock_items[0]}." if low_stock_items else ""
         return {
             "scenario": "morning",
-            "text": f"☀️ Good morning, {name}. Yesterday you made {_fmt(currency, yesterday_sales)} from sales. Your profit yesterday was {_fmt(currency, yesterday_sales - yesterday_expenses)}.{low_stock_line} What would you like to do today?",
+            "text": (
+                f"☀️ Good morning, {name}. Yesterday you made {_fmt(currency, yesterday_sales)} from "
+                f"{yesterday_sale_count} sale{'s' if yesterday_sale_count != 1 else ''}. Your profit was "
+                f"{_fmt(currency, yesterday_sales - yesterday_expenses)}.{low_stock_line} What would you like to do today?"
+            ),
             "chips": ["Record a sale", "Check stock", "View yesterday", "Create an invoice"],
         }
 
     if time_of_day == "midday":
+        today_sale_count = await _count_transactions(db, business_id, TransactionType.SALE, today_start_utc, now_utc)
+        biggest_category = await _biggest_expense_category(db, business_id, today_start_utc, now_utc)
+        expense_line = f" Your biggest expense today is {biggest_category}." if biggest_category else ""
         return {
             "scenario": "midday",
-            "text": f"👋 Good afternoon, {name}. So far today you've made {_fmt(currency, today_sales)} from sales. How can I help?",
+            "text": (
+                f"👋 Good afternoon, {name}. So far today you've made {_fmt(currency, today_sales)} from "
+                f"{today_sale_count} sale{'s' if today_sale_count != 1 else ''}.{expense_line} How can I help?"
+            ),
             "chips": ["Record a sale", "Record an expense", "Create an invoice"],
         }
 
