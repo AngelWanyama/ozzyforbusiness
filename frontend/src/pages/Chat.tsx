@@ -57,6 +57,7 @@ export default function Chat() {
   const audioCtxRef = useRef<AudioContext | null>(null);
   const recordTimerRef = useRef<number | null>(null);
   const silenceRafRef = useRef<number | null>(null);
+  const initializedRef = useRef(false);
   const navigate = useNavigate();
 
   const cur = summary?.currency || 'UGX';
@@ -320,6 +321,12 @@ export default function Chat() {
     .catch(() => push({ role: 'ozzy', kind: 'text', text: WELCOME_BACK_TEXT }));
 
   useEffect(() => {
+    // Guards against the greeting/onboarding being fetched and pushed twice — React 18's
+    // StrictMode intentionally mounts, unmounts, and remounts this effect once in development,
+    // which otherwise double-fires this one-time initial load.
+    if (initializedRef.current) return;
+    initializedRef.current = true;
+
     api.getMe().then((u: any) => {
       setProfile(u);
       if (u?.role === 'owner') loadSummary(); // Workers can't see profit/totals, so skip it entirely for them.
