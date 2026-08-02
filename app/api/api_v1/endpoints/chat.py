@@ -1,11 +1,10 @@
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.schemas.chat import ChatRequest
-from app.schemas.nlp import NLPTransactionResponse
+from app.schemas.chat import ChatRequest, ChatResponse
 from app.schemas.receipt import ReceiptScanResponse
 from app.schemas.greeting import GreetingResponse
-from app.services.nlp_parser import nlp_parser
+from app.services.chat_engine import chat_engine
 from app.services.receipt_scanner import receipt_scanner
 from app.services.greeting_engine import get_greeting
 from app.api.deps import get_current_user, get_db
@@ -16,14 +15,15 @@ router = APIRouter()
 ALLOWED_RECEIPT_TYPES = {"image/png", "image/jpeg", "image/jpg", "image/webp"}
 MAX_RECEIPT_BYTES = 8 * 1024 * 1024  # 8MB
 
-@router.post("/process", response_model=NLPTransactionResponse)
+@router.post("/process", response_model=ChatResponse)
 async def process_chat(
     request: ChatRequest,
-    current_user: User = Depends(get_current_user)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     try:
-        result = await nlp_parser.parse_transaction(request.text, user_currency=current_user.currency)
-        return result
+        result = await chat_engine.handle_message(db, current_user, request.text)
+        return ChatResponse(**result)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

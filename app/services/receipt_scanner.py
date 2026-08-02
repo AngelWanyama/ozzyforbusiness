@@ -7,7 +7,7 @@ from app.services.ai_client import ai_client
 
 class ReceiptScannerService:
     """Reads a photo of a paper receipt and pulls out the expense details, using a
-    vision-capable Groq model — the same "AI figures it out" pattern as nlp_parser,
+    vision-capable Groq model — the same "AI figures it out" pattern as the chat engine,
     just starting from an image instead of typed text."""
 
     async def scan_receipt(self, image_bytes: bytes, mime_type: str, user_currency: str = "UGX") -> Dict[str, Any]:

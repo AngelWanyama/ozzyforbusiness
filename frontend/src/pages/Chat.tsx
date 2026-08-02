@@ -331,20 +331,6 @@ export default function Chat() {
 
   const showConfirm = (d: Draft) => push({ role: 'ozzy', kind: 'confirm', draft: d });
 
-  const answerQuery = async (msg: string) => {
-    if (profile?.role === 'worker') {
-      push({ role: 'ozzy', kind: 'text', text: `Profit and totals are only visible to the business owner. I can still help you record sales and expenses!` });
-      return;
-    }
-    const s = await (api as any).request('/reports/dashboard?period=today').catch(() => null);
-    const sales = Number(s?.total_sales || 0), spent = Number(s?.total_expenses || 0);
-    const profit = sales - spent;
-    const q = msg.toLowerCase();
-    if (q.includes('profit')) push({ role: 'ozzy', kind: 'text', text: `Today your profit is ${fmt(profit)} — you sold ${fmt(sales)} and spent ${fmt(spent)}.` });
-    else if (q.includes('spent') || q.includes('expense')) push({ role: 'ozzy', kind: 'text', text: `You've spent ${fmt(spent)} today.` });
-    else push({ role: 'ozzy', kind: 'text', text: `Today you've sold ${fmt(sales)}, spent ${fmt(spent)}, so your profit is ${fmt(profit)}.` });
-  };
-
   const send = async (text?: string) => {
     const msg = (text ?? input).trim();
     if (!msg) return;
@@ -382,25 +368,21 @@ export default function Chat() {
         return;
       }
 
+      // The backend now runs real tool-calling (record_sale, record_expense, get_summary,
+      // get_inventory, create_invoice/receipt, list_low_stock) instead of a fixed classifier,
+      // so it decides for itself what to do and just tells us which UI action to show.
       const res: any = await api.processChat(msg);
-      const p = res.parsed || res;
-      const intent = p.intent || p.type;
-      const description = p.item || p.description || 'item';
-      const amount = parseFloat(p.amount) || 0;
-      const quantity = parseFloat(p.quantity) || 1;
-      const category = p.category || undefined;
 
-      if (intent === 'query') { await answerQuery(msg); return; }
-
-      // buying stock counts as money out (expense)
-      const type: 'sale' | 'expense' = intent === 'sale' ? 'sale' : 'expense';
-
-      if (amount > 0) {
-        showConfirm({ type, description, amount, quantity, category, original: msg });
+      if (res.action === 'confirm_sale' || res.action === 'confirm_expense') {
+        const type: 'sale' | 'expense' = res.action === 'confirm_sale' ? 'sale' : 'expense';
+        const d = res.draft || {};
+        showConfirm({ type, description: d.description || 'item', amount: parseFloat(d.amount) || 0, quantity: parseFloat(d.quantity) || 1, category: d.category, original: msg });
+      } else if (res.action === 'need_amount') {
+        const d = res.draft || {};
+        setPending({ type: d.type === 'expense' ? 'expense' : 'sale', description: d.description || 'item', amount: 0, quantity: parseFloat(d.quantity) || 1, category: d.category, original: msg });
+        push({ role: 'ozzy', kind: 'text', text: res.reply || `Got it. How much was it?` });
       } else {
-        // no amount yet -> ask for it (guided)
-        setPending({ type, description, amount: 0, quantity, category, original: msg });
-        push({ role: 'ozzy', kind: 'text', text: `Got it — ${description}. How much was it?` });
+        push({ role: 'ozzy', kind: 'text', text: res.reply || `Sorry, I didn't quite catch that — could you rephrase?` });
       }
     } catch {
       push({ role: 'ozzy', kind: 'text', text: `Sorry, something went wrong. Please try again.` });

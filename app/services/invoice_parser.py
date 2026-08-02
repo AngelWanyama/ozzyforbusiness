@@ -6,7 +6,7 @@ from app.services.ai_client import ai_client
 
 class InvoiceParserService:
     """Turns a plain-language invoice request ("Invoice for Grace, 3 dresses @ 35,000")
-    into structured customer + line-item data, the same way nlp_parser does for transactions."""
+    into structured customer + line-item data, the same way the chat engine does for transactions."""
 
     async def parse_invoice_text(self, text: str, currency: str = "UGX") -> Dict[str, Any]:
         if not ai_client.is_available:

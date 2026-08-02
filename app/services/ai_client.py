@@ -1,7 +1,7 @@
 """
 Shared AI client wrapper.
 
-Centralizes AI client setup so nlp_parser, report_engine, and summary_generator
+Centralizes AI client setup so chat_engine, report_engine, and summary_generator
 don't each duplicate the "is the key configured?" check and error handling.
 
 Provider: Groq (free tier, no card required, no billing approval delays —
@@ -56,6 +56,35 @@ class AIClient:
             return content.strip() if content else None
         except Exception as e:
             logger.error(f"Groq call failed: {e}")
+            return None
+
+    def chat(
+        self,
+        messages: list,
+        tools: Optional[list] = None,
+        tool_choice: str = "auto",
+        model: str = DEFAULT_MODEL,
+    ):
+        """
+        Low-level chat call that supports tool/function calling. Returns the raw response
+        message (with .content and .tool_calls), or None if unconfigured/on failure — callers
+        should treat a tool-call round and a plain-text round the same way at this layer.
+        """
+        if not self._client:
+            return None
+        try:
+            kwargs = {}
+            if tools:
+                kwargs["tools"] = tools
+                kwargs["tool_choice"] = tool_choice
+            response = self._client.chat.completions.create(
+                model=model,
+                messages=messages,
+                **kwargs,
+            )
+            return response.choices[0].message
+        except Exception as e:
+            logger.error(f"Groq chat call failed: {e}")
             return None
 
     def generate_from_image(
