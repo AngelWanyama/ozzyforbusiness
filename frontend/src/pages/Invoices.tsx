@@ -39,9 +39,9 @@ export const TEMPLATES = [
   { id: 'classic_ledger', name: 'Classic Ledger', color: 'from-[#F7F1E3] to-[#EDE3CC]', desc: 'Cream, boxed like a receipt book — best for market vendors' },
 ];
 
-const fmt = (n: number | string) => {
+const fmt = (n: number | string, currency: string = 'UGX') => {
   const num = Number(n || 0);
-  return 'UGX ' + num.toLocaleString();
+  return `${currency || 'UGX'} ${num.toLocaleString()}`;
 };
 
 // ─── InvoiceListView (API-backed) ────────────────────────────────────────────
@@ -139,7 +139,7 @@ function InvoiceListView({ onCreate }: { onCreate: () => void }) {
                   <p className="text-xs text-gray-400">{new Date(inv.created_at).toLocaleDateString()}</p>
                 </div>
                 <div className="text-right">
-                  <p className="font-semibold text-gray-900 dark:text-white">{fmt(inv.total_amount)}</p>
+                  <p className="font-semibold text-gray-900 dark:text-white">{fmt(inv.total_amount, inv.currency)}</p>
                   <div className="flex gap-1 mt-1 justify-end">
                     <button onClick={(e) => { e.stopPropagation(); setViewInvoice(inv); }} className="p-1 text-gray-400 hover:text-[#0D9488] transition"><Eye size={14} /></button>
                     <button onClick={(e) => { e.stopPropagation(); handleDuplicate(inv); }} className="p-1 text-gray-400 hover:text-[#0D9488] transition"><Copy size={14} /></button>
@@ -174,12 +174,12 @@ function InvoicePreviewPanel({ invoice, onBack, onStatusUpdate, onDeleted }: {
   };
 
   const handleWhatsApp = () => {
-    const text = `Invoice ${invoice.invoice_number}\nCustomer: ${invoice.customer_name}\nTotal: ${fmt(invoice.total_amount)}\nStatus: ${invoice.status}`;
+    const text = `Invoice ${invoice.invoice_number}\nCustomer: ${invoice.customer_name}\nTotal: ${fmt(invoice.total_amount, invoice.currency)}\nStatus: ${invoice.status}`;
     window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
   };
 
   const handleEmail = () => {
-    window.open(`mailto:${invoice.customer_email || ''}?subject=Invoice ${invoice.invoice_number}&body=Dear ${invoice.customer_name}, please find your invoice attached. Total: ${fmt(invoice.total_amount)}`);
+    window.open(`mailto:${invoice.customer_email || ''}?subject=Invoice ${invoice.invoice_number}&body=Dear ${invoice.customer_name}, please find your invoice attached. Total: ${fmt(invoice.total_amount, invoice.currency)}`);
   };
 
   const handleStatusChange = async (status: InvoiceStatus) => {
@@ -249,14 +249,14 @@ function InvoicePreviewPanel({ invoice, onBack, onStatusUpdate, onDeleted }: {
                 <tr key={item.id} className="border-b border-gray-50 dark:border-gray-700/50">
                   <td className="py-2 text-gray-800 dark:text-gray-200">{item.description}</td>
                   <td className="py-2 text-right text-gray-600 dark:text-gray-400">{item.quantity}</td>
-                  <td className="py-2 text-right text-gray-600 dark:text-gray-400">{fmt(item.unit_price)}</td>
-                  <td className="py-2 text-right font-medium text-gray-900 dark:text-white">{fmt(item.total_price)}</td>
+                  <td className="py-2 text-right text-gray-600 dark:text-gray-400">{fmt(item.unit_price, invoice.currency)}</td>
+                  <td className="py-2 text-right font-medium text-gray-900 dark:text-white">{fmt(item.total_price, invoice.currency)}</td>
                 </tr>
               ))}
             </tbody>
           </table>
           <div className="border-t border-gray-100 dark:border-gray-700 pt-3 space-y-1 text-sm">
-            <div className="flex justify-between text-lg font-bold"><span className="text-gray-900 dark:text-white">Total</span><span className="text-[#0D9488]">{fmt(invoice.total_amount)}</span></div>
+            <div className="flex justify-between text-lg font-bold"><span className="text-gray-900 dark:text-white">Total</span><span className="text-[#0D9488]">{fmt(invoice.total_amount, invoice.currency)}</span></div>
           </div>
           {invoice.notes && (
             <div className="mt-4 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-xl">
@@ -309,7 +309,7 @@ function ConversationalInvoiceCreator({ onCreated }: { onCreated: () => void }) 
       setPreview(invoice);
       setMessages(prev => [...prev, {
         role: 'ozzy',
-        text: `✅ Invoice created!\n\n**${invoice.invoice_number}** — ${invoice.customer_name}\nTotal: ${fmt(invoice.total_amount)}\nItems: ${invoice.items?.length || 0}\n\nInvoice is saved as **Draft**. You can view it in the list.`
+        text: `✅ Invoice created!\n\n**${invoice.invoice_number}** — ${invoice.customer_name}\nTotal: ${fmt(invoice.total_amount, invoice.currency)}\nItems: ${invoice.items?.length || 0}\n\nInvoice is saved as **Draft**. You can view it in the list.`
       }]);
     } catch (err: any) {
       setMessages(prev => [...prev, { role: 'ozzy', text: `Sorry, I couldn't create that invoice. ${err.message || 'Try a different format.'}` }]);
@@ -373,7 +373,7 @@ function ConversationalInvoiceCreator({ onCreated }: { onCreated: () => void }) 
             <span className="text-sm font-semibold text-gray-900 dark:text-white">Created: {preview.invoice_number}</span>
           </div>
           <p className="text-sm text-gray-600 dark:text-gray-400">Customer: {preview.customer_name}</p>
-          <p className="text-sm font-semibold text-[#0D9488]">Total: {fmt(preview.total_amount)}</p>
+          <p className="text-sm font-semibold text-[#0D9488]">Total: {fmt(preview.total_amount, preview.currency)}</p>
           <button onClick={onCreated} className="w-full mt-3 py-2.5 bg-[#0D9488] text-white font-semibold rounded-xl text-sm hover:bg-[#0B7A70] transition">
             View in List →
           </button>
