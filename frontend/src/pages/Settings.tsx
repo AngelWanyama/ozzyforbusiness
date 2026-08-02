@@ -386,6 +386,17 @@ export default function Settings() {
             </div>
           </div>
 
+          {/* Invoices & Receipts */}
+          <div className="bg-surface p-lg rounded-xl border border-outline-variant space-y-md">
+            <h4 className="font-headline-md text-headline-md text-primary flex items-center gap-2 text-[24px]"><Icon name="receipt_long" /> Invoices &amp; Receipts</h4>
+            <div className="flex flex-col">
+              <button onClick={() => navigate('/invoices')} className="flex items-center justify-between p-md hover:bg-surface-container-low transition-colors rounded-lg group">
+                <span className="font-label-md text-label-md text-on-surface-variant">View Invoices &amp; Receipts</span>
+                <span className="text-outline group-hover:translate-x-1 transition-transform text-[20px]"><Icon name="chevron_right" /></span>
+              </button>
+            </div>
+          </div>
+
           {/* Team & Access */}
           <div className="bg-surface p-lg rounded-xl border border-outline-variant space-y-md">
             <h4 className="font-headline-md text-headline-md text-primary flex items-center gap-2 text-[24px]"><Icon name="group" /> Team &amp; Access</h4>
