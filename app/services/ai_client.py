@@ -6,7 +6,11 @@ don't each duplicate the "is the key configured?" check and error handling.
 
 Provider: Groq (free tier, no card required, no billing approval delays —
 switched from Gemini after hitting Google's account-verification issues).
-Groq is OpenAI-SDK-compatible and hosts open models like Llama 3.3.
+Groq is OpenAI-SDK-compatible.
+
+Model: openai/gpt-oss-120b — Groq's recommended replacement for
+llama-3.3-70b-versatile, which Groq is decommissioning (August 2026). Also
+better suited to tool/function calling, which the chat engine relies on.
 """
 import logging
 from typing import Optional
@@ -15,7 +19,7 @@ from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_MODEL = "llama-3.3-70b-versatile"
+DEFAULT_MODEL = "openai/gpt-oss-120b"
 
 
 class AIClient:
