@@ -18,6 +18,10 @@ class User(Base):
     password_hash = Column(String, nullable=True)  # nullable: users created before this change won't have one yet
     business_name = Column(String, nullable=True)
     business_type = Column(String, nullable=True)
+    owner_name = Column(String, nullable=True)
+    business_description = Column(String, nullable=True)
+    years_in_business = Column(Integer, nullable=True)
+    email = Column(String, nullable=True)
     currency = Column(String, default="UGX")
     role = Column(String, default="owner", nullable=False)  # "owner" or "worker"
     business_id = Column(UUID(as_uuid=True), nullable=True, index=True)

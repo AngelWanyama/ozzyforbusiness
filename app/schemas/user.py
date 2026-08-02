@@ -17,6 +17,10 @@ class UserUpgrade(BaseModel):
 class UserProfile(BaseModel):
     business_name: Optional[str] = None
     business_type: Optional[str] = None
+    owner_name: Optional[str] = None
+    business_description: Optional[str] = None
+    years_in_business: Optional[int] = None
+    email: Optional[str] = None
     currency: Optional[str] = None
     phone_number: str
 
@@ -26,4 +30,8 @@ class UserProfile(BaseModel):
 class UserProfileUpdate(BaseModel):
     business_name: Optional[str] = None
     business_type: Optional[str] = None
+    owner_name: Optional[str] = None
+    business_description: Optional[str] = None
+    years_in_business: Optional[int] = None
+    email: Optional[str] = None
     currency: Optional[str] = None
