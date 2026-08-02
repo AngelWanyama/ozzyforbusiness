@@ -22,6 +22,7 @@ class Transaction(Base):
     amount = Column(Numeric(precision=18, scale=2), nullable=False)
     currency = Column(String, nullable=False)
     description = Column(String, nullable=True)
+    category = Column(String, nullable=True)  # e.g. "Sales Revenue", "Utilities", "Transport" — from the NLP parser
     quantity = Column(Numeric(precision=18, scale=2), default=1)
     transaction_date = Column(DateTime, default=datetime.utcnow)
 

@@ -7,7 +7,7 @@ function Icon({ name, className = '' }: { name: string; className?: string }) {
   return <span className={`material-symbols-outlined ${className}`}>{name}</span>;
 }
 
-interface Draft { type: 'sale' | 'expense'; description: string; amount: number; quantity: number; original: string; }
+interface Draft { type: 'sale' | 'expense'; description: string; amount: number; quantity: number; category?: string; original: string; }
 
 type OnboardStepKey =
   | 'owner_name' | 'business_name' | 'business_location'
@@ -49,11 +49,12 @@ export default function Chat() {
   const cur = summary?.currency || 'UGX';
   const fmt = (n: number | string) => `${cur} ${Number(n || 0).toLocaleString()}`;
 
-  const loadSummary = () => api.getReportSummary().then(setSummary).catch(() => {});
+  // Today's totals for the summary strip — owners only (Workers can't see profit/totals).
+  // Cast to bypass client.ts's typed method list rather than widen a shared file mid-flight.
+  const loadSummary = () => (api as any).request('/reports/dashboard?period=today').then(setSummary).catch(() => {});
   const push = (m: Omit<Msg, 'id'>) => setMessages(p => [...p, { ...m, id: Date.now() + '' + Math.random() }]);
 
   // Saves one profile field immediately, as each onboarding answer comes in.
-  // Cast to bypass client.ts's narrower updateMe() typing rather than widen a shared file mid-flight.
   const patchMe = (data: Record<string, any>) => (api as any).updateMe(data);
 
   const uploadLogoFile = async (file: File) => {
@@ -218,9 +219,9 @@ export default function Chat() {
   // ─── Setup ───────────────────────────────────────────────────────────────────
 
   useEffect(() => {
-    loadSummary();
     api.getMe().then((u: any) => {
       setProfile(u);
+      if (u?.role === 'owner') loadSummary(); // Workers can't see profit/totals, so skip it entirely for them.
       if (u?.role === 'owner' && !u?.onboarding_completed) {
         askOnboardStep(0, {});
       } else {
@@ -239,7 +240,11 @@ export default function Chat() {
   const showConfirm = (d: Draft) => push({ role: 'ozzy', kind: 'confirm', draft: d });
 
   const answerQuery = async (msg: string) => {
-    const s = await api.getReportSummary().catch(() => null);
+    if (profile?.role === 'worker') {
+      push({ role: 'ozzy', kind: 'text', text: `Profit and totals are only visible to the business owner. I can still help you record sales and expenses!` });
+      return;
+    }
+    const s = await (api as any).request('/reports/dashboard?period=today').catch(() => null);
     const sales = Number(s?.total_sales || 0), spent = Number(s?.total_expenses || 0);
     const profit = sales - spent;
     const q = msg.toLowerCase();
@@ -291,6 +296,7 @@ export default function Chat() {
       const description = p.item || p.description || 'item';
       const amount = parseFloat(p.amount) || 0;
       const quantity = parseFloat(p.quantity) || 1;
+      const category = p.category || undefined;
 
       if (intent === 'query') { await answerQuery(msg); return; }
 
@@ -298,10 +304,10 @@ export default function Chat() {
       const type: 'sale' | 'expense' = intent === 'sale' ? 'sale' : 'expense';
 
       if (amount > 0) {
-        showConfirm({ type, description, amount, quantity, original: msg });
+        showConfirm({ type, description, amount, quantity, category, original: msg });
       } else {
         // no amount yet -> ask for it (guided)
-        setPending({ type, description, amount: 0, quantity, original: msg });
+        setPending({ type, description, amount: 0, quantity, category, original: msg });
         push({ role: 'ozzy', kind: 'text', text: `Got it — ${description}. How much was it?` });
       }
     } catch {
@@ -315,9 +321,9 @@ export default function Chat() {
     if (!m.draft) return;
     setMessages(p => p.filter(x => x.id !== m.id));
     try {
-      await api.createTransaction({ type: m.draft.type, amount: m.draft.amount, description: m.draft.description, quantity: m.draft.quantity });
+      await api.createTransaction({ type: m.draft.type, amount: m.draft.amount, description: m.draft.description, quantity: m.draft.quantity, category: m.draft.category });
       push({ role: 'ozzy', kind: 'recorded', draft: m.draft });
-      loadSummary();
+      if (profile?.role === 'owner') loadSummary();
     } catch { push({ role: 'ozzy', kind: 'text', text: `Couldn't save that. Please try again.` }); }
   };
   const confirmEdit = (m: Msg) => {
@@ -331,22 +337,24 @@ export default function Chat() {
 
   return (
     <div className="h-screen flex flex-col relative overflow-hidden">
-      {/* Summary strip */}
-      <div className="z-30 px-lg py-md md:px-margin-desktop">
-        <button onClick={() => navigate('/reports')} className="mx-auto flex items-center justify-center gap-xl bg-surface-container-low hover:bg-surface-container hover:shadow-sm cursor-pointer transition-all rounded-full px-xl py-4 border border-outline-variant/40">
-          <span className="flex items-center gap-2 whitespace-nowrap">
-            <Icon name="trending_up" className="text-[#1EBFA3] text-[22px]" />
-            <span className="text-[15px] text-on-surface-variant">Today's sales</span>
-            <span className="text-[16px] font-bold text-primary">{summary ? fmt(summary.total_sales) : '—'}</span>
-          </span>
-          <span className="w-px h-5 bg-outline-variant"></span>
-          <span className="flex items-center gap-2 whitespace-nowrap">
-            <Icon name="trending_down" className="text-outline text-[22px]" />
-            <span className="text-[15px] text-on-surface-variant">Spent</span>
-            <span className="text-[16px] font-bold text-on-surface">{summary ? fmt(summary.total_expenses) : '—'}</span>
-          </span>
-        </button>
-      </div>
+      {/* Summary strip — owners only; Workers can't see profit/totals */}
+      {profile?.role !== 'worker' && (
+        <div className="z-30 px-lg py-md md:px-margin-desktop">
+          <button onClick={() => navigate('/reports')} className="mx-auto flex items-center justify-center gap-xl bg-surface-container-low hover:bg-surface-container hover:shadow-sm cursor-pointer transition-all rounded-full px-xl py-4 border border-outline-variant/40">
+            <span className="flex items-center gap-2 whitespace-nowrap">
+              <Icon name="trending_up" className="text-[#1EBFA3] text-[22px]" />
+              <span className="text-[15px] text-on-surface-variant">Today's sales</span>
+              <span className="text-[16px] font-bold text-primary">{summary ? fmt(summary.total_sales) : '—'}</span>
+            </span>
+            <span className="w-px h-5 bg-outline-variant"></span>
+            <span className="flex items-center gap-2 whitespace-nowrap">
+              <Icon name="trending_down" className="text-outline text-[22px]" />
+              <span className="text-[15px] text-on-surface-variant">Spent</span>
+              <span className="text-[16px] font-bold text-on-surface">{summary ? fmt(summary.total_expenses) : '—'}</span>
+            </span>
+          </button>
+        </div>
+      )}
 
       {/* Header */}
       <div className="text-center pt-md pb-md">

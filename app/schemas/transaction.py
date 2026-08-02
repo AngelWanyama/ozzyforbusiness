@@ -11,6 +11,7 @@ class TransactionBase(BaseModel):
     currency: str = "UGX"
     item_id: Optional[UUID] = None
     description: Optional[str] = None
+    category: Optional[str] = None
     quantity: Decimal = 1.0
     transaction_date: Optional[datetime] = None
 

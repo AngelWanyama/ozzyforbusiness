@@ -261,6 +261,61 @@ class ReportEngineService:
         buffer.close()
         return pdf_bytes
 
+    def export_dashboard_pdf(self, dashboard, user: User) -> bytes:
+        buffer = io.BytesIO()
+        c = canvas.Canvas(buffer, pagesize=letter)
+        width, height = letter
+
+        c.setFont("Helvetica-Bold", 18)
+        c.drawString(1 * inch, height - 1 * inch, f"{user.business_name or 'My Business'} - Report")
+        c.setFont("Helvetica", 12)
+        c.drawString(1 * inch, height - 1.25 * inch, f"Period: {dashboard.period.title()}  •  Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}")
+        c.drawString(1 * inch, height - 1.45 * inch, f"Currency: {dashboard.currency}")
+
+        y_pos = height - 2 * inch
+        c.setFont("Helvetica-Bold", 14)
+        c.drawString(1 * inch, y_pos, "Summary")
+        y_pos -= 0.25 * inch
+        c.setFont("Helvetica", 12)
+        for label, value in [
+            ("Total Sales", dashboard.total_sales),
+            ("Money Spent", dashboard.total_expenses),
+            ("Money Left (Profit)", dashboard.net_profit),
+        ]:
+            c.drawString(1.2 * inch, y_pos, f"{label}: {dashboard.currency} {value:,.2f}")
+            y_pos -= 0.22 * inch
+
+        y_pos -= 0.2 * inch
+        c.setFont("Helvetica-Bold", 14)
+        c.drawString(1 * inch, y_pos, "Where Your Money Went")
+        y_pos -= 0.25 * inch
+        c.setFont("Helvetica", 11)
+        if dashboard.category_breakdown:
+            for slice_ in dashboard.category_breakdown:
+                c.drawString(1.2 * inch, y_pos, f"- {slice_.category}: {dashboard.currency} {slice_.amount:,.2f} ({slice_.percent:.0f}%)")
+                y_pos -= 0.2 * inch
+        else:
+            c.drawString(1.2 * inch, y_pos, "No expenses recorded this period.")
+            y_pos -= 0.2 * inch
+
+        y_pos -= 0.2 * inch
+        c.setFont("Helvetica-Bold", 14)
+        c.drawString(1 * inch, y_pos, "Best Selling Products")
+        y_pos -= 0.25 * inch
+        c.setFont("Helvetica", 11)
+        if dashboard.best_sellers:
+            for item in dashboard.best_sellers:
+                c.drawString(1.2 * inch, y_pos, f"- {item.name}: {item.units:g} units, {dashboard.currency} {item.revenue:,.2f}")
+                y_pos -= 0.2 * inch
+        else:
+            c.drawString(1.2 * inch, y_pos, "No sales recorded this period.")
+            y_pos -= 0.2 * inch
+
+        c.save()
+        pdf_bytes = buffer.getvalue()
+        buffer.close()
+        return pdf_bytes
+
     def _wrap_text(self, text: str, width: int) -> List[str]:
         words = text.split()
         lines = []

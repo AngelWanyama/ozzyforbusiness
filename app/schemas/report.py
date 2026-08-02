@@ -64,3 +64,35 @@ class AccountingReport(BaseModel):
     period: TimePeriod
     data: Dict
     summary: str # AI generated plain language summary
+
+
+class DailyPoint(BaseModel):
+    label: str          # e.g. "Mon"
+    date: str            # ISO date, e.g. "2026-07-27"
+    sales: Decimal
+    expenses: Decimal
+
+
+class CategorySlice(BaseModel):
+    category: str
+    amount: Decimal
+    percent: float
+
+
+class BestSeller(BaseModel):
+    name: str
+    units: Decimal
+    revenue: Decimal
+
+
+class ReportDashboard(BaseModel):
+    period: str  # "today" | "week" | "month"
+    currency: str
+    total_sales: Decimal
+    total_expenses: Decimal
+    net_profit: Decimal
+    sales_change_pct: Optional[float] = None
+    expenses_change_pct: Optional[float] = None
+    daily: List[DailyPoint]
+    category_breakdown: List[CategorySlice]
+    best_sellers: List[BestSeller]
