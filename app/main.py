@@ -16,13 +16,17 @@ os.makedirs(UPLOADS_DIR, exist_ok=True)
 app.mount("/uploads", StaticFiles(directory=UPLOADS_DIR), name="uploads")
 
 # --- CORS: allow the frontend (browser) to talk to this backend ---
-# Covers localhost, 127.0.0.1, and local network IPs on any port (dev-friendly).
+# Covers localhost, 127.0.0.1, and local network IPs on any port (dev-friendly), plus the
+# real production frontend once it's deployed (set FRONTEND_URL in Render's env vars to the
+# live Vercel URL — no code change needed when that URL is known).
+_production_origins = [settings.FRONTEND_URL] if settings.FRONTEND_URL else []
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:5173",
         "http://127.0.0.1:5173",
         "http://192.168.1.228:5173",
+        *_production_origins,
     ],
     allow_origin_regex=r"http://(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+):\d+",
     allow_credentials=True,
