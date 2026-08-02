@@ -45,9 +45,18 @@ export default function Chat() {
   const [scanning, setScanning] = useState(false);
   const [chips, setChips] = useState<string[]>(['Record a sale', 'Record an expense', 'Check stock']);
 
+  const [recording, setRecording] = useState(false);
+  const [recordSeconds, setRecordSeconds] = useState(0);
+  const [transcribing, setTranscribing] = useState(false);
+
   const endRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const receiptInputRef = useRef<HTMLInputElement>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const recordTimerRef = useRef<number | null>(null);
+  const silenceRafRef = useRef<number | null>(null);
   const navigate = useNavigate();
 
   const cur = summary?.currency || 'UGX';
@@ -327,9 +336,34 @@ export default function Chat() {
 
   useEffect(() => { setTimeout(() => endRef.current?.scrollIntoView({ behavior: 'smooth' }), 80); }, [messages]);
 
+  // Never leave the microphone running if the user navigates away mid-recording.
+  useEffect(() => () => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') mediaRecorderRef.current.stop();
+    if (audioCtxRef.current) audioCtxRef.current.close().catch(() => {});
+    if (recordTimerRef.current) clearInterval(recordTimerRef.current);
+    if (silenceRafRef.current) cancelAnimationFrame(silenceRafRef.current);
+  }, []);
+
   const firstNumber = (t: string) => { const m = t.replace(/,/g, '').match(/\d+(\.\d+)?/); return m ? parseFloat(m[0]) : 0; };
 
   const showConfirm = (d: Draft) => push({ role: 'ozzy', kind: 'confirm', draft: d });
+
+  // Shared by typed and voice messages: given the chat engine's { reply, action, draft }
+  // response, decide whether to show a Yes/No confirm card, ask for a missing amount, or just
+  // display the reply text.
+  const applyChatResult = (res: any, originalText: string) => {
+    if (res.action === 'confirm_sale' || res.action === 'confirm_expense') {
+      const type: 'sale' | 'expense' = res.action === 'confirm_sale' ? 'sale' : 'expense';
+      const d = res.draft || {};
+      showConfirm({ type, description: d.description || 'item', amount: parseFloat(d.amount) || 0, quantity: parseFloat(d.quantity) || 1, category: d.category, original: originalText });
+    } else if (res.action === 'need_amount') {
+      const d = res.draft || {};
+      setPending({ type: d.type === 'expense' ? 'expense' : 'sale', description: d.description || 'item', amount: 0, quantity: parseFloat(d.quantity) || 1, category: d.category, original: originalText });
+      push({ role: 'ozzy', kind: 'text', text: res.reply || `Got it. How much was it?` });
+    } else {
+      push({ role: 'ozzy', kind: 'text', text: res.reply || `Sorry, I didn't quite catch that — could you rephrase?` });
+    }
+  };
 
   const send = async (text?: string) => {
     const msg = (text ?? input).trim();
@@ -372,18 +406,7 @@ export default function Chat() {
       // get_inventory, create_invoice/receipt, list_low_stock) instead of a fixed classifier,
       // so it decides for itself what to do and just tells us which UI action to show.
       const res: any = await api.processChat(msg);
-
-      if (res.action === 'confirm_sale' || res.action === 'confirm_expense') {
-        const type: 'sale' | 'expense' = res.action === 'confirm_sale' ? 'sale' : 'expense';
-        const d = res.draft || {};
-        showConfirm({ type, description: d.description || 'item', amount: parseFloat(d.amount) || 0, quantity: parseFloat(d.quantity) || 1, category: d.category, original: msg });
-      } else if (res.action === 'need_amount') {
-        const d = res.draft || {};
-        setPending({ type: d.type === 'expense' ? 'expense' : 'sale', description: d.description || 'item', amount: 0, quantity: parseFloat(d.quantity) || 1, category: d.category, original: msg });
-        push({ role: 'ozzy', kind: 'text', text: res.reply || `Got it. How much was it?` });
-      } else {
-        push({ role: 'ozzy', kind: 'text', text: res.reply || `Sorry, I didn't quite catch that — could you rephrase?` });
-      }
+      applyChatResult(res, msg);
     } catch {
       push({ role: 'ozzy', kind: 'text', text: `Sorry, something went wrong. Please try again.` });
     } finally {
@@ -408,6 +431,107 @@ export default function Chat() {
   };
 
   const onKey = (e: React.KeyboardEvent) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } };
+
+  // ─── Voice input ─────────────────────────────────────────────────────────────
+
+  const cleanupRecording = () => {
+    if (recordTimerRef.current) { clearInterval(recordTimerRef.current); recordTimerRef.current = null; }
+    if (silenceRafRef.current) { cancelAnimationFrame(silenceRafRef.current); silenceRafRef.current = null; }
+    if (audioCtxRef.current) { audioCtxRef.current.close().catch(() => {}); audioCtxRef.current = null; }
+  };
+
+  // Auto-stops the recording after a short pause in speech, so the user doesn't have to
+  // remember to tap again — but tapping the mic again still stops it immediately too.
+  const watchForSilence = (stream: MediaStream) => {
+    const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+    const audioCtx = new AudioCtx();
+    audioCtxRef.current = audioCtx;
+    const source = audioCtx.createMediaStreamSource(stream);
+    const analyser = audioCtx.createAnalyser();
+    analyser.fftSize = 512;
+    source.connect(analyser);
+    const data = new Uint8Array(analyser.frequencyBinCount);
+    const SILENCE_LEVEL = 10;
+    const SILENCE_MS = 1600;
+    let lastLoudAt = Date.now();
+
+    const check = () => {
+      if (!mediaRecorderRef.current || mediaRecorderRef.current.state === 'inactive') return;
+      analyser.getByteFrequencyData(data);
+      const avg = data.reduce((a, b) => a + b, 0) / data.length;
+      const now = Date.now();
+      if (avg > SILENCE_LEVEL) lastLoudAt = now;
+      else if (now - lastLoudAt > SILENCE_MS) { stopRecording(); return; }
+      silenceRafRef.current = requestAnimationFrame(check);
+    };
+    silenceRafRef.current = requestAnimationFrame(check);
+  };
+
+  const startRecording = async () => {
+    let stream: MediaStream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch {
+      push({ role: 'ozzy', kind: 'text', text: "I need microphone access to hear you — please allow microphone permission for this site in your browser, then try again." });
+      return;
+    }
+
+    const recorder = new MediaRecorder(stream);
+    mediaRecorderRef.current = recorder;
+    audioChunksRef.current = [];
+    recorder.ondataavailable = (e) => { if (e.data.size > 0) audioChunksRef.current.push(e.data); };
+    recorder.onstop = async () => {
+      stream.getTracks().forEach(t => t.stop());
+      cleanupRecording();
+      setRecording(false);
+      const blob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+      if (blob.size < 800) {
+        push({ role: 'ozzy', kind: 'text', text: "I didn't catch any audio there — please try recording again." });
+        return;
+      }
+      await sendVoice(blob);
+    };
+
+    recorder.start();
+    setRecording(true);
+    setRecordSeconds(0);
+    recordTimerRef.current = window.setInterval(() => setRecordSeconds(s => s + 1), 1000);
+    watchForSilence(stream);
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      mediaRecorderRef.current.stop();
+    }
+  };
+
+  const toggleRecording = () => { if (recording) stopRecording(); else startRecording(); };
+
+  const sendVoice = async (blob: Blob) => {
+    setTranscribing(true);
+    try {
+      const token = localStorage.getItem('ozzy_access_token');
+      const base = (import.meta as any).env?.VITE_API_URL || 'http://localhost:8000/api/v1';
+      const form = new FormData();
+      form.append('file', blob, 'recording.webm');
+      const res = await fetch(`${base}/chat/voice`, {
+        method: 'POST',
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        body: form,
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        push({ role: 'ozzy', kind: 'text', text: data.detail || "Sorry, I couldn't hear that clearly. Please try again." });
+        return;
+      }
+      push({ role: 'user', kind: 'text', text: data.transcript });
+      applyChatResult(data, data.transcript);
+    } catch {
+      push({ role: 'ozzy', kind: 'text', text: "Sorry, something went wrong sending your recording. Please try again." });
+    } finally {
+      setTranscribing(false);
+    }
+  };
 
   return (
     <div className="h-screen flex flex-col relative overflow-hidden">
@@ -503,12 +627,13 @@ export default function Chat() {
             </div>
           ))}
 
-          {(loading || scanning) && (
+          {(loading || scanning || transcribing) && (
             <div className="flex items-center gap-2 text-outline">
               <div className="w-2 h-2 bg-outline rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
               <div className="w-2 h-2 bg-outline rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
               <div className="w-2 h-2 bg-outline rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
               {scanning && <span className="text-sm">Reading your receipt…</span>}
+              {transcribing && <span className="text-sm">Listening to your recording…</span>}
             </div>
           )}
           <div ref={endRef} />
@@ -532,12 +657,32 @@ export default function Chat() {
             </div>
           )}
           <div className="relative flex items-center group">
-            <input id="chat-input" value={input} onChange={e => setInput(e.target.value)} onKeyDown={onKey} disabled={loading}
-              className="w-full h-14 pl-lg pr-16 bg-white border border-outline-variant rounded-full text-body-md focus:ring-2 focus:ring-primary focus:border-transparent transition-all shadow-lg group-hover:shadow-xl outline-none"
-              placeholder={onboardIndex !== null ? 'Type your answer…' : 'Type a message to Ozzy...'} type="text" />
-            <button onClick={() => send()} disabled={loading} className="absolute right-2 w-10 h-10 bg-primary text-white rounded-full flex items-center justify-center hover:scale-105 active:scale-90 transition-all shadow-sm disabled:opacity-50">
-              <Icon name="send" />
-            </button>
+            {recording ? (
+              <button onClick={toggleRecording} className="w-full h-14 pl-lg pr-lg bg-white border-2 border-red-400 rounded-full flex items-center gap-3 shadow-lg">
+                <span className="relative flex w-3 h-3">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
+                  <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500" />
+                </span>
+                <span className="font-body-md text-body-md text-on-surface">
+                  Recording… {String(Math.floor(recordSeconds / 60)).padStart(1, '0')}:{String(recordSeconds % 60).padStart(2, '0')} — tap to stop
+                </span>
+              </button>
+            ) : (
+              <>
+                <input id="chat-input" value={input} onChange={e => setInput(e.target.value)} onKeyDown={onKey} disabled={loading || transcribing}
+                  className="w-full h-14 pl-lg pr-28 bg-white border border-outline-variant rounded-full text-body-md focus:ring-2 focus:ring-primary focus:border-transparent transition-all shadow-lg group-hover:shadow-xl outline-none"
+                  placeholder={onboardIndex !== null ? 'Type your answer…' : transcribing ? 'Listening to your recording…' : 'Type a message to Ozzy...'} type="text" />
+                {onboardIndex === null && (
+                  <button onClick={toggleRecording} disabled={loading || transcribing} title="Record a voice message"
+                    className="absolute right-14 w-10 h-10 text-on-surface-variant hover:text-primary rounded-full flex items-center justify-center hover:scale-105 active:scale-90 transition-all disabled:opacity-50">
+                    <Icon name={transcribing ? 'hourglass_empty' : 'mic'} />
+                  </button>
+                )}
+                <button onClick={() => send()} disabled={loading || transcribing} className="absolute right-2 w-10 h-10 bg-primary text-white rounded-full flex items-center justify-center hover:scale-105 active:scale-90 transition-all shadow-sm disabled:opacity-50">
+                  <Icon name="send" />
+                </button>
+              </>
+            )}
           </div>
         </div>
       </div>

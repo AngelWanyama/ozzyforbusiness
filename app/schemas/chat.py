@@ -19,3 +19,7 @@ class ChatResponse(BaseModel):
     # "reply" (just show the text) | "confirm_sale" | "confirm_expense" | "need_amount"
     action: str = "reply"
     draft: Optional[ChatDraft] = None
+
+
+class VoiceChatResponse(ChatResponse):
+    transcript: str

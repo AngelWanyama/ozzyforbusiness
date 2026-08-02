@@ -87,6 +87,23 @@ class AIClient:
             logger.error(f"Groq chat call failed: {e}")
             return None
 
+    def transcribe_audio(self, audio_bytes: bytes, filename: str = "audio.webm") -> Optional[str]:
+        """Transcribes a short voice recording to text via Groq's Whisper API (same GROQ_API_KEY,
+        no separate service). Returns None if unconfigured, on failure, or if nothing was heard."""
+        if not self._client:
+            return None
+        try:
+            result = self._client.audio.transcriptions.create(
+                model="whisper-large-v3-turbo",
+                file=(filename, audio_bytes),
+                response_format="text",
+            )
+            text = (result or "").strip()
+            return text or None
+        except Exception as e:
+            logger.error(f"Groq transcription failed: {e}")
+            return None
+
     def generate_from_image(
         self,
         prompt: str,
