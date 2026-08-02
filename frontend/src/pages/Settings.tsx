@@ -1,11 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import api from '../api/client';
 import { AFRICA_COUNTRIES } from '../data/africaCountries';
 
 function Icon({ name, className = '' }: { name: string; className?: string }) {
-  return <span className="material-symbols-outlined" style={{ fontSize: 'inherit' }}>{name}</span>;
+  return <span className={`material-symbols-outlined ${className}`} style={{ fontSize: 'inherit' }}>{name}</span>;
 }
 
 // Every African currency, so Ozzy can serve the whole continent.
@@ -54,6 +54,25 @@ const AFRICA_CURRENCIES = [
   { code: 'USD', label: 'USD — US Dollar' },
 ];
 
+// Short FAQ shown in the Help Center panel.
+const HELP_FAQS = [
+  { q: 'How do I record a sale or expense?', a: 'Go to Chat and type it in plain language, like "Sold 3 sodas 6,000" or "Bought airtime 5,000". Ozzy will confirm before saving it.' },
+  { q: 'How do I change my business name, type, or currency?', a: 'Open Settings and edit the Business Settings card, then tap Save Changes.' },
+  { q: 'How do I add my business logo?', a: 'In Settings, tap the pencil icon on your profile picture, or "Change Logo" in the Business Logo card, and choose a PNG, JPEG, or WEBP image under 5MB.' },
+  { q: 'Can workers see everything I see?', a: 'Not yet fully built — workers will only be able to record sales/expenses and see recent activity, without access to reports or settings.' },
+  { q: 'Is my business data private?', a: 'Yes. Only your account (and, once the Workers feature is finished, staff you personally invite) can see your business data.' },
+];
+
+// Turn a stored image path like "/uploads/logos/xyz.png" into a full URL against the backend host.
+const API_ORIGIN = (import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1').replace(/\/?api\/v1\/?$/, '');
+function logoSrc(url?: string | null) {
+  if (!url) return '';
+  return url.startsWith('http') ? url : `${API_ORIGIN}${url}`;
+}
+
+const ALLOWED_LOGO_TYPES = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp'];
+const MAX_LOGO_BYTES = 5 * 1024 * 1024; // 5MB, matches backend limit
+
 // Split a stored international number (e.g. +256700123456) into flag + local part for display.
 function phoneParts(full: string) {
   const match = AFRICA_COUNTRIES
@@ -66,18 +85,46 @@ function phoneParts(full: string) {
   return { flag: '🌍', dial: '', local: full };
 }
 
+// A settings row for a feature that isn't built yet — stays visible, but is honest that it's not live.
+function ComingSoonRow({ icon, label, onClick }: { icon: string; label: string; onClick: () => void }) {
+  return (
+    <button onClick={onClick} className="flex items-center justify-between p-md hover:bg-surface-container-low transition-colors rounded-lg group">
+      <span className="flex items-center gap-2">
+        <span className="font-label-md text-label-md text-on-surface-variant">{label}</span>
+        <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-surface-container-highest text-on-surface-variant">Soon</span>
+      </span>
+      <span className="text-outline group-hover:translate-x-1 transition-transform text-[20px]"><Icon name={icon} /></span>
+    </button>
+  );
+}
+
 export default function Settings() {
   const { logout } = useAuth();
   const navigate = useNavigate();
   const [dark, setDark] = useState(() => localStorage.getItem('ozzy_dark') === '1');
 
   const [phone, setPhone] = useState('');
+  const [role, setRole] = useState('owner');
   const [businessName, setBusinessName] = useState('');
   const [businessType, setBusinessType] = useState('');
   const [currency, setCurrency] = useState('UGX');
+  const [ownerName, setOwnerName] = useState('');
+  const [email, setEmail] = useState('');
+  const [businessDescription, setBusinessDescription] = useState('');
+  const [yearsInBusiness, setYearsInBusiness] = useState('');
+  const [logoUrl, setLogoUrl] = useState('');
+  const [notificationsEnabled, setNotificationsEnabled] = useState(true);
+
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [editingProfile, setEditingProfile] = useState(false);
+
+  const [logoUploading, setLogoUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const [toast, setToast] = useState<string | null>(null);
+  const [supportModal, setSupportModal] = useState<'help' | 'contact' | 'about' | null>(null);
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', dark);
@@ -88,21 +135,84 @@ export default function Settings() {
     api.getMe()
       .then((u: any) => {
         setPhone(u?.phone_number || '');
+        setRole(u?.role || 'owner');
         setBusinessName(u?.business_name || '');
         setBusinessType(u?.business_type || '');
         setCurrency(u?.currency || 'UGX');
+        setOwnerName(u?.owner_name || '');
+        setEmail(u?.email || '');
+        setBusinessDescription(u?.business_description || '');
+        setYearsInBusiness(u?.years_in_business != null ? String(u.years_in_business) : '');
+        setLogoUrl(u?.logo_url || '');
+        setNotificationsEnabled(u?.notifications_enabled !== false);
       })
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
 
+  const showToast = (msg: string) => setToast(msg);
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 2600);
+    return () => clearTimeout(t);
+  }, [toast]);
+
+  const comingSoon = (label: string) => showToast(`${label} is coming soon.`);
+
   const save = async () => {
     setSaving(true); setSaved(false);
     try {
-      await api.updateMe({ business_name: businessName, business_type: businessType, currency });
+      await api.updateMe({
+        business_name: businessName,
+        business_type: businessType,
+        currency,
+        owner_name: ownerName,
+        email,
+        business_description: businessDescription,
+        years_in_business: yearsInBusiness.trim() ? parseInt(yearsInBusiness, 10) : undefined,
+      });
       setSaved(true);
       setTimeout(() => setSaved(false), 2500);
-    } catch { /* silent for now */ } finally { setSaving(false); }
+    } catch {
+      showToast('Could not save your changes. Check your connection and try again.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleLogoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    if (!ALLOWED_LOGO_TYPES.includes(file.type)) {
+      showToast('Please choose a PNG, JPEG, or WEBP image.');
+      return;
+    }
+    if (file.size > MAX_LOGO_BYTES) {
+      showToast('That image is too big — please choose one under 5MB.');
+      return;
+    }
+    setLogoUploading(true);
+    try {
+      const updated: any = await api.uploadLogo(file);
+      setLogoUrl(updated?.logo_url || '');
+      showToast('Logo updated.');
+    } catch (err: any) {
+      showToast(err?.message || 'Could not upload logo. Try again.');
+    } finally {
+      setLogoUploading(false);
+    }
+  };
+
+  const handleNotifToggle = async () => {
+    const next = !notificationsEnabled;
+    setNotificationsEnabled(next);
+    try {
+      await api.updateMe({ notifications_enabled: next });
+    } catch {
+      setNotificationsEnabled(!next);
+      showToast('Could not update notifications. Try again.');
+    }
   };
 
   const handleLogout = () => { logout(); navigate('/login'); };
@@ -114,25 +224,85 @@ export default function Settings() {
     <main className="bg-surface-container-low min-h-screen">
       <div className="max-w-[800px] mx-auto px-margin-mobile md:px-xl py-xl space-y-xl">
 
+        {/* Hidden file input shared by both logo triggers */}
+        <input ref={fileInputRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={handleLogoChange} />
+
         {/* Profile Card */}
         <section className="bg-surface p-xl rounded-xl border border-outline-variant flex flex-col md:flex-row items-center justify-between gap-lg">
-          <div className="flex items-center gap-lg w-full">
-            <div className="relative group">
-              <div className="w-24 h-24 rounded-full overflow-hidden border-4 border-primary-container bg-surface-container flex items-center justify-center">
-                <Icon name="storefront" className="text-primary text-[40px]" />
+          <div className="flex flex-col w-full">
+            <div className="flex items-center gap-lg w-full">
+              <div className="relative group">
+                <div className="w-24 h-24 rounded-full overflow-hidden border-4 border-primary-container bg-surface-container flex items-center justify-center">
+                  {logoUrl ? (
+                    <img src={logoSrc(logoUrl)} alt="Business logo" className="w-full h-full object-cover" />
+                  ) : (
+                    <Icon name="storefront" className="text-primary text-[40px]" />
+                  )}
+                </div>
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={logoUploading}
+                  className="absolute bottom-0 right-0 p-1.5 bg-primary text-on-primary rounded-full border-2 border-surface hover:scale-110 transition-transform text-[18px] disabled:opacity-50"
+                >
+                  <Icon name={logoUploading ? 'progress_activity' : 'edit'} />
+                </button>
               </div>
-              <button className="absolute bottom-0 right-0 p-1.5 bg-primary text-on-primary rounded-full border-2 border-surface hover:scale-110 transition-transform text-[18px]">
-                <Icon name="edit" />
+              <div className="flex-grow">
+                <h3 className="font-headline-md text-headline-md text-on-surface">{displayName}</h3>
+                {ownerName && <p className="text-[13px] text-on-surface-variant">{ownerName}</p>}
+                <p className="font-body-md text-body-md text-on-surface-variant">{p.flag} {p.dial} {p.local || ''}</p>
+                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[12px] font-bold bg-secondary-container text-on-secondary-container mt-xs uppercase tracking-wider">
+                  {role === 'worker' ? 'Worker' : 'Owner'}
+                </span>
+              </div>
+              <button
+                onClick={() => setEditingProfile(v => !v)}
+                className="hidden md:flex h-12 px-lg items-center justify-center border border-primary text-primary rounded-xl font-bold hover:bg-primary/5 transition-all active:scale-95 duration-200"
+              >
+                {editingProfile ? 'Close' : 'Edit Profile'}
               </button>
             </div>
-            <div className="flex-grow">
-              <h3 className="font-headline-md text-headline-md text-on-surface">{displayName}</h3>
-              <p className="font-body-md text-body-md text-on-surface-variant">{p.flag} {p.dial} {p.local || ''}</p>
-              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[12px] font-bold bg-secondary-container text-on-secondary-container mt-xs uppercase tracking-wider">Owner</span>
-            </div>
-            <button className="hidden md:flex h-12 px-lg items-center justify-center border border-primary text-primary rounded-xl font-bold hover:bg-primary/5 transition-all active:scale-95 duration-200">Edit Profile</button>
+
+            {editingProfile && (
+              <div className="w-full mt-lg pt-lg border-t border-outline-variant grid grid-cols-1 md:grid-cols-2 gap-lg">
+                <div className="space-y-sm">
+                  <label className="font-label-md text-label-md text-on-surface-variant ml-1">Your Name</label>
+                  <div className="h-[52px] bg-surface-container-low border border-outline-variant rounded-lg flex items-center px-md gap-sm focus-within:border-primary transition-colors">
+                    <span className="text-outline text-[20px]"><Icon name="person" /></span>
+                    <input value={ownerName} onChange={e => setOwnerName(e.target.value)} placeholder="Your full name" className="bg-transparent border-none focus:ring-0 w-full font-body-md outline-none" type="text" />
+                  </div>
+                </div>
+                <div className="space-y-sm">
+                  <label className="font-label-md text-label-md text-on-surface-variant ml-1">Email (optional)</label>
+                  <div className="h-[52px] bg-surface-container-low border border-outline-variant rounded-lg flex items-center px-md gap-sm focus-within:border-primary transition-colors">
+                    <span className="text-outline text-[20px]"><Icon name="mail" /></span>
+                    <input value={email} onChange={e => setEmail(e.target.value)} placeholder="you@example.com" className="bg-transparent border-none focus:ring-0 w-full font-body-md outline-none" type="email" />
+                  </div>
+                </div>
+                <div className="space-y-sm">
+                  <label className="font-label-md text-label-md text-on-surface-variant ml-1">What your business does</label>
+                  <div className="h-[52px] bg-surface-container-low border border-outline-variant rounded-lg flex items-center px-md gap-sm focus-within:border-primary transition-colors">
+                    <span className="text-outline text-[20px]"><Icon name="storefront" /></span>
+                    <input value={businessDescription} onChange={e => setBusinessDescription(e.target.value)} placeholder="e.g. Sells shoes and clothes" className="bg-transparent border-none focus:ring-0 w-full font-body-md outline-none" type="text" />
+                  </div>
+                </div>
+                <div className="space-y-sm">
+                  <label className="font-label-md text-label-md text-on-surface-variant ml-1">Years in Business</label>
+                  <div className="h-[52px] bg-surface-container-low border border-outline-variant rounded-lg flex items-center px-md gap-sm focus-within:border-primary transition-colors">
+                    <span className="text-outline text-[20px]"><Icon name="calendar_month" /></span>
+                    <input value={yearsInBusiness} onChange={e => setYearsInBusiness(e.target.value.replace(/[^0-9]/g, ''))} placeholder="e.g. 3" inputMode="numeric" className="bg-transparent border-none focus:ring-0 w-full font-body-md outline-none" type="text" />
+                  </div>
+                </div>
+                <p className="md:col-span-2 text-[12px] text-on-surface-variant">Tap "Save Changes" in Business Settings below to save your profile.</p>
+              </div>
+            )}
           </div>
-          <button className="md:hidden w-full h-12 flex items-center justify-center border border-primary text-primary rounded-xl font-bold hover:bg-primary/5 transition-all active:scale-95 duration-200">Edit Profile</button>
+          <button
+            onClick={() => setEditingProfile(v => !v)}
+            className="md:hidden w-full h-12 flex items-center justify-center border border-primary text-primary rounded-xl font-bold hover:bg-primary/5 transition-all active:scale-95 duration-200"
+          >
+            {editingProfile ? 'Close' : 'Edit Profile'}
+          </button>
         </section>
 
         {/* Bento grid */}
@@ -142,18 +312,9 @@ export default function Settings() {
           <div className="bg-surface p-lg rounded-xl border border-outline-variant space-y-md">
             <h4 className="font-headline-md text-headline-md text-primary flex items-center gap-2 text-[24px]"><Icon name="person" /> Account</h4>
             <div className="flex flex-col">
-              <button className="flex items-center justify-between p-md hover:bg-surface-container-low transition-colors rounded-lg group">
-                <span className="font-label-md text-label-md text-on-surface-variant">Profile Details</span>
-                <span className="text-outline group-hover:translate-x-1 transition-transform text-[20px]"><Icon name="chevron_right" /></span>
-              </button>
-              <button className="flex items-center justify-between p-md hover:bg-surface-container-low transition-colors rounded-lg group">
-                <span className="font-label-md text-label-md text-on-surface-variant">Add Another Account</span>
-                <span className="text-outline group-hover:translate-x-1 transition-transform text-[20px]"><Icon name="add_circle" /></span>
-              </button>
-              <button className="flex items-center justify-between p-md hover:bg-surface-container-low transition-colors rounded-lg group">
-                <span className="font-label-md text-label-md text-on-surface-variant">Switch Business</span>
-                <span className="text-outline group-hover:translate-x-1 transition-transform text-[20px]"><Icon name="swap_horiz" /></span>
-              </button>
+              <ComingSoonRow icon="chevron_right" label="Profile Details" onClick={() => comingSoon('Profile Details')} />
+              <ComingSoonRow icon="add_circle" label="Add Another Account" onClick={() => comingSoon('Add Another Account')} />
+              <ComingSoonRow icon="swap_horiz" label="Switch Business" onClick={() => comingSoon('Switch Business')} />
             </div>
           </div>
 
@@ -161,18 +322,9 @@ export default function Settings() {
           <div className="bg-surface p-lg rounded-xl border border-outline-variant space-y-md">
             <h4 className="font-headline-md text-headline-md text-primary flex items-center gap-2 text-[24px]"><Icon name="group" /> Team &amp; Access</h4>
             <div className="flex flex-col">
-              <button className="flex items-center justify-between p-md hover:bg-surface-container-low transition-colors rounded-lg group">
-                <span className="font-label-md text-label-md text-on-surface-variant">Add Worker</span>
-                <span className="text-outline group-hover:translate-x-1 transition-transform text-[20px]"><Icon name="person_add" /></span>
-              </button>
-              <button className="flex items-center justify-between p-md hover:bg-surface-container-low transition-colors rounded-lg group">
-                <span className="font-label-md text-label-md text-on-surface-variant">Manage Access</span>
-                <span className="text-outline group-hover:translate-x-1 transition-transform text-[20px]"><Icon name="lock_person" /></span>
-              </button>
-              <button className="flex items-center justify-between p-md hover:bg-surface-container-low transition-colors rounded-lg group">
-                <span className="font-label-md text-label-md text-on-surface-variant">Shop Assistant Access</span>
-                <span className="text-outline group-hover:translate-x-1 transition-transform text-[20px]"><Icon name="storefront" /></span>
-              </button>
+              <ComingSoonRow icon="person_add" label="Add Worker" onClick={() => comingSoon('Add Worker')} />
+              <ComingSoonRow icon="lock_person" label="Manage Access" onClick={() => comingSoon('Manage Access')} />
+              <ComingSoonRow icon="storefront" label="Shop Assistant Access" onClick={() => comingSoon('Shop Assistant Access')} />
             </div>
           </div>
 
@@ -215,11 +367,19 @@ export default function Settings() {
                 </div>
               </div>
               <div className="flex items-center gap-lg p-md bg-surface-container-lowest border border-dashed border-outline-variant rounded-lg">
-                <div className="w-16 h-16 bg-surface-container rounded-lg flex items-center justify-center text-outline text-[24px]"><Icon name="image" /></div>
+                <div className="w-16 h-16 bg-surface-container rounded-lg flex items-center justify-center text-outline text-[24px] overflow-hidden shrink-0">
+                  {logoUrl ? (
+                    <img src={logoSrc(logoUrl)} alt="Business logo" className="w-full h-full object-cover" />
+                  ) : (
+                    <Icon name="image" />
+                  )}
+                </div>
                 <div className="flex-grow">
                   <h5 className="font-label-md text-label-md text-on-surface font-bold">Business Logo</h5>
                   <p className="text-[12px] text-on-surface-variant italic">used on invoices &amp; receipts</p>
-                  <button className="text-primary font-bold text-[14px] mt-1 hover:underline">Change Logo</button>
+                  <button onClick={() => fileInputRef.current?.click()} disabled={logoUploading} className="text-primary font-bold text-[14px] mt-1 hover:underline disabled:opacity-50">
+                    {logoUploading ? 'Uploading...' : 'Change Logo'}
+                  </button>
                 </div>
               </div>
             </div>
@@ -238,10 +398,10 @@ export default function Settings() {
               <div className="flex items-center justify-between p-md hover:bg-surface-container-low transition-colors rounded-lg">
                 <div className="flex flex-col">
                   <span className="font-label-md text-label-md text-on-surface">Notifications</span>
-                  <span className="text-[12px] text-on-surface-variant">Push and SMS alerts</span>
+                  <span className="text-[12px] text-on-surface-variant">Turn in-app alerts on or off</span>
                 </div>
                 <label className="relative inline-flex items-center cursor-pointer">
-                  <input defaultChecked className="sr-only peer" type="checkbox" />
+                  <input checked={notificationsEnabled} onChange={handleNotifToggle} className="sr-only peer" type="checkbox" />
                   <div className="w-11 h-6 bg-surface-container-highest rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
                 </label>
               </div>
@@ -262,15 +422,15 @@ export default function Settings() {
           <div className="bg-surface p-lg rounded-xl border border-outline-variant space-y-md">
             <h4 className="font-headline-md text-headline-md text-primary flex items-center gap-2 text-[24px]"><Icon name="shield" /> Security</h4>
             <div className="flex flex-col">
-              <button className="flex items-center justify-between p-md hover:bg-surface-container-low transition-colors rounded-lg group">
-                <span className="font-label-md text-label-md text-on-surface-variant">Change PIN</span>
-                <span className="text-outline group-hover:translate-x-1 transition-transform text-[20px]"><Icon name="pin" /></span>
-              </button>
-              <div className="flex items-center justify-between p-md hover:bg-surface-container-low transition-colors rounded-lg">
-                <span className="font-label-md text-label-md text-on-surface-variant">Biometric Login</span>
-                <label className="relative inline-flex items-center cursor-pointer">
-                  <input defaultChecked className="sr-only peer" type="checkbox" />
-                  <div className="w-11 h-6 bg-surface-container-highest rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+              <ComingSoonRow icon="pin" label="Change PIN" onClick={() => comingSoon('Change PIN')} />
+              <div className="flex items-center justify-between p-md rounded-lg opacity-60">
+                <span className="flex items-center gap-2">
+                  <span className="font-label-md text-label-md text-on-surface-variant">Biometric Login</span>
+                  <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-surface-container-highest text-on-surface-variant">Soon</span>
+                </span>
+                <label className="relative inline-flex items-center cursor-not-allowed" onClick={() => comingSoon('Biometric Login')}>
+                  <input disabled className="sr-only peer" type="checkbox" />
+                  <div className="w-11 h-6 bg-surface-container-highest rounded-full after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all"></div>
                 </label>
               </div>
             </div>
@@ -281,11 +441,11 @@ export default function Settings() {
             <h4 className="font-headline-md text-headline-md text-primary flex items-center gap-2 text-[24px]"><Icon name="support_agent" /> Support</h4>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-md">
               {[
-                { i: 'help', t: 'Help Center', s: 'Tutorials & FAQs' },
-                { i: 'mail', t: 'Contact Support', s: 'Chat with us' },
-                { i: 'info', t: 'About Ozzy', s: 'Version 1.0' },
+                { key: 'help' as const, i: 'help', t: 'Help Center', s: 'Tutorials & FAQs' },
+                { key: 'contact' as const, i: 'mail', t: 'Contact Support', s: 'Get in touch' },
+                { key: 'about' as const, i: 'info', t: 'About Ozzy', s: 'Version 1.0' },
               ].map(b => (
-                <button key={b.t} className="flex flex-col items-center justify-center p-lg bg-surface-container-low hover:bg-surface-container-high rounded-xl border border-outline-variant transition-all hover:shadow-sm">
+                <button key={b.t} onClick={() => setSupportModal(b.key)} className="flex flex-col items-center justify-center p-lg bg-surface-container-low hover:bg-surface-container-high rounded-xl border border-outline-variant transition-all hover:shadow-sm">
                   <span className="text-primary mb-2 text-[24px]"><Icon name={b.i} /></span>
                   <span className="font-label-md text-label-md font-bold">{b.t}</span>
                   <span className="text-[12px] text-on-surface-variant">{b.s}</span>
@@ -303,6 +463,57 @@ export default function Settings() {
           <p className="text-[12px] text-on-surface-variant opacity-60 text-center">Ozzy for Business • © 2026</p>
         </div>
       </div>
+
+      {/* Support modal */}
+      {supportModal && (
+        <div className="fixed inset-0 z-30 bg-black/40 flex items-end sm:items-center justify-center" onClick={() => setSupportModal(null)}>
+          <div className="bg-surface rounded-t-2xl sm:rounded-2xl p-xl w-full sm:max-w-[28rem] max-h-[80vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            {supportModal === 'help' && (
+              <>
+                <h2 className="font-headline-md text-headline-md text-primary mb-md flex items-center gap-2"><Icon name="help" /> Help Center</h2>
+                <div className="space-y-md">
+                  {HELP_FAQS.map(f => (
+                    <div key={f.q}>
+                      <p className="font-label-md text-label-md text-on-surface font-bold">{f.q}</p>
+                      <p className="font-body-md text-body-md text-on-surface-variant">{f.a}</p>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+            {supportModal === 'contact' && (
+              <>
+                <h2 className="font-headline-md text-headline-md text-primary mb-md flex items-center gap-2"><Icon name="mail" /> Contact Support</h2>
+                <p className="font-body-md text-body-md text-on-surface-variant">
+                  A dedicated support inbox hasn't been set up yet, so there isn't a real address to give you here.
+                  In the meantime, please reach out to whoever set up your Ozzy account for help — this panel will be
+                  updated with a real contact option soon.
+                </p>
+              </>
+            )}
+            {supportModal === 'about' && (
+              <>
+                <h2 className="font-headline-md text-headline-md text-primary mb-md flex items-center gap-2"><Icon name="info" /> About Ozzy</h2>
+                <p className="font-body-md text-body-md text-on-surface-variant mb-sm">
+                  Ozzy for Business is an AI-powered assistant that helps African small businesses manage sales, expenses,
+                  and reports as easily as chatting on WhatsApp — built for Uganda first.
+                </p>
+                <p className="text-[12px] text-on-surface-variant">Version 1.0</p>
+              </>
+            )}
+            <button onClick={() => setSupportModal(null)} className="mt-lg h-12 w-full flex items-center justify-center bg-primary text-white rounded-xl font-bold hover:opacity-90 transition-all active:scale-95 duration-200">
+              Close
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Toast */}
+      {toast && (
+        <div className="fixed bottom-24 md:bottom-8 left-1/2 -translate-x-1/2 bg-on-surface text-surface px-lg py-sm rounded-full shadow-lg text-[14px] font-label-md z-50 whitespace-nowrap">
+          {toast}
+        </div>
+      )}
     </main>
   );
 }

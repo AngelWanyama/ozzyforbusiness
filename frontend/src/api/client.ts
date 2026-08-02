@@ -145,8 +145,27 @@ class ApiClient {
     return this.request<any>('/users/me');
   }
 
-  async updateMe(data: { business_name?: string; business_type?: string; currency?: string }) {
+  async updateMe(data: {
+    business_name?: string; business_type?: string; currency?: string;
+    owner_name?: string; business_description?: string; years_in_business?: number;
+    email?: string; notifications_enabled?: boolean; receipt_template?: string;
+  }) {
     return this.request('/users/me', { method: 'PATCH', body: JSON.stringify(data) });
+  }
+
+  async uploadLogo(file: File) {
+    const token = this.getToken();
+    const formData = new FormData();
+    formData.append('file', file);
+    const res = await fetch(`${this.baseUrl}/users/me/logo`, {
+      method: 'POST',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: formData,
+    });
+    if (res.status === 403 || res.status === 401) { this.clearToken(); window.location.hash = '#/login'; throw new Error('Auth failed'); }
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || `Request failed: ${res.status}`);
+    return data;
   }
 
   async getUserUsage() {
