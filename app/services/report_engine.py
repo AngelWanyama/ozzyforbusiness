@@ -24,10 +24,14 @@ class ReportEngineService:
     async def get_pnl_report(
         self, db: AsyncSession, user: User, start_date: datetime, end_date: datetime
     ) -> PNLReport:
+        # Fall back to the user's own id if they somehow have no business_id yet
+        # (should not happen post Stage A backfill, but keeps this report safe).
+        effective_business_id = user.business_id or user.id
+
         # Get Revenue
         revenue_stmt = select(Transaction.amount, Transaction.description).where(
             and_(
-                Transaction.user_id == user.id,
+                Transaction.business_id == effective_business_id,
                 Transaction.type == TransactionType.SALE,
                 Transaction.transaction_date >= start_date,
                 Transaction.transaction_date <= end_date
@@ -50,7 +54,7 @@ class ReportEngineService:
         # Get Expenses
         expense_stmt = select(Transaction.amount, Transaction.description).where(
             and_(
-                Transaction.user_id == user.id,
+                Transaction.business_id == effective_business_id,
                 Transaction.type == TransactionType.EXPENSE,
                 Transaction.transaction_date >= start_date,
                 Transaction.transaction_date <= end_date
@@ -84,17 +88,21 @@ class ReportEngineService:
     async def get_balance_sheet_report(
         self, db: AsyncSession, user: User, as_of_date: datetime
     ) -> BalanceSheetReport:
+        # Fall back to the user's own id if they somehow have no business_id yet
+        # (should not happen post Stage A backfill, but keeps this report safe).
+        effective_business_id = user.business_id or user.id
+
         # Cash on hand (calculated from all transactions up to date)
         sales_stmt = select(func.sum(Transaction.amount)).where(
             and_(
-                Transaction.user_id == user.id,
+                Transaction.business_id == effective_business_id,
                 Transaction.type == TransactionType.SALE,
                 Transaction.transaction_date <= as_of_date
             )
         )
         expenses_stmt = select(func.sum(Transaction.amount)).where(
             and_(
-                Transaction.user_id == user.id,
+                Transaction.business_id == effective_business_id,
                 Transaction.type == TransactionType.EXPENSE,
                 Transaction.transaction_date <= as_of_date
             )
@@ -140,10 +148,14 @@ class ReportEngineService:
     async def get_cash_flow_report(
         self, db: AsyncSession, user: User, start_date: datetime, end_date: datetime
     ) -> CashFlowReport:
+        # Fall back to the user's own id if they somehow have no business_id yet
+        # (should not happen post Stage A backfill, but keeps this report safe).
+        effective_business_id = user.business_id or user.id
+
         # Cash In (Sales)
         cash_in_stmt = select(func.sum(Transaction.amount)).where(
             and_(
-                Transaction.user_id == user.id,
+                Transaction.business_id == effective_business_id,
                 Transaction.type == TransactionType.SALE,
                 Transaction.transaction_date >= start_date,
                 Transaction.transaction_date <= end_date
@@ -155,7 +167,7 @@ class ReportEngineService:
         # Cash Out (Expenses)
         cash_out_stmt = select(func.sum(Transaction.amount)).where(
             and_(
-                Transaction.user_id == user.id,
+                Transaction.business_id == effective_business_id,
                 Transaction.type == TransactionType.EXPENSE,
                 Transaction.transaction_date >= start_date,
                 Transaction.transaction_date <= end_date

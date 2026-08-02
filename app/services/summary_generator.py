@@ -59,10 +59,14 @@ class SummaryGenerator:
     async def _generate_user_summary(
         self, db: AsyncSession, user: User, summary_type: SummaryType, start_date: datetime, end_date: datetime
     ):
-        # Fetch transactions for period
+        # Fetch transactions for period (shared across the whole business, not just
+        # this individual user - fixes the siloing bug where a worker's sales never
+        # reached the owner's totals). Fall back to the user's own id if they
+        # somehow have no business_id yet (should not happen post Stage A backfill).
+        effective_business_id = user.business_id or user.id
         stmt = select(Transaction).where(
             and_(
-                Transaction.user_id == user.id,
+                Transaction.business_id == effective_business_id,
                 Transaction.transaction_date >= start_date,
                 Transaction.transaction_date <= end_date
             )

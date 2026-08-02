@@ -34,5 +34,16 @@ async def get_current_user(
     
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
-    
+
     return user
+
+async def require_owner(
+    current_user: User = Depends(get_current_user)
+) -> User:
+    """Gate an endpoint to business owners only. Workers get a 403 with a plain-language message."""
+    if current_user.role != "owner":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only the business owner can do this.",
+        )
+    return current_user

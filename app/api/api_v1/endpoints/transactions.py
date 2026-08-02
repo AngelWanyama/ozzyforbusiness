@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from typing import List
+from datetime import datetime, timedelta
 from app.api.deps import get_db, get_current_user
 from app.models.user import User
 from app.models.transaction import Transaction as TransactionModel
@@ -26,9 +27,14 @@ async def create_transaction(
             detail="Transaction limit reached for FREE plan. Please upgrade to PAID for unlimited transactions."
         )
 
+    # Fall back to the user's own id if they somehow have no business_id yet
+    # (should not happen post Stage A backfill, but keeps this endpoint safe).
+    effective_business_id = current_user.business_id or current_user.id
+
     transaction = TransactionModel(
         **transaction_in.model_dump(),
-        user_id=current_user.id
+        user_id=current_user.id,
+        business_id=effective_business_id
     )
     db.add(transaction)
     
@@ -47,13 +53,23 @@ async def read_transactions(
     skip: int = 0,
     limit: int = 100
 ):
+    # Fall back to the user's own id if they somehow have no business_id yet
+    # (should not happen post Stage A backfill, but keeps this endpoint safe).
+    effective_business_id = current_user.business_id or current_user.id
+
+    filters = [TransactionModel.business_id == effective_business_id]
+
+    # Workers can only see the past week's activity, regardless of skip/limit.
+    if current_user.role == "worker":
+        filters.append(TransactionModel.transaction_date >= datetime.utcnow() - timedelta(days=7))
+
     # Total count
-    count_stmt = select(func.count()).select_from(TransactionModel).where(TransactionModel.user_id == current_user.id)
+    count_stmt = select(func.count()).select_from(TransactionModel).where(*filters)
     count_result = await db.execute(count_stmt)
     total = count_result.scalar()
 
     # Items
-    stmt = select(TransactionModel).where(TransactionModel.user_id == current_user.id).offset(skip).limit(limit).order_by(TransactionModel.transaction_date.desc())
+    stmt = select(TransactionModel).where(*filters).offset(skip).limit(limit).order_by(TransactionModel.transaction_date.desc())
     result = await db.execute(stmt)
     items = result.scalars().all()
 

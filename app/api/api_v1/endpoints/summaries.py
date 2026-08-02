@@ -3,7 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_
 from typing import List, Optional
 from datetime import datetime
-from app.api.deps import get_db, get_current_user
+from app.api.deps import get_db, require_owner
 from app.models.user import User, PlanType
 from app.models.summary import Summary, SummaryType
 from pydantic import BaseModel
@@ -24,7 +24,7 @@ class SummarySchema(BaseModel):
 @router.get("/latest", response_model=SummarySchema)
 async def get_latest_summary(
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require_owner)
 ):
     stmt = select(Summary).where(Summary.user_id == current_user.id).order_by(Summary.created_at.desc()).limit(1)
     result = await db.execute(stmt)
@@ -39,7 +39,7 @@ async def get_latest_summary(
 async def get_daily_summary(
     date: str = Query(..., description="YYYY-MM-DD"),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require_owner)
 ):
     try:
         dt = datetime.strptime(date, "%Y-%m-%d")

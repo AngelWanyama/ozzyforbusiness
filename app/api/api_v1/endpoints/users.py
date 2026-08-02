@@ -2,7 +2,7 @@ import os
 import uuid
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.api.deps import get_db, get_current_user
+from app.api.deps import get_db, get_current_user, require_owner
 from app.models.user import User, PlanType
 from app.schemas.user import UserPlan, UserUsage, UserUpgrade, UserProfile, UserProfileUpdate
 from datetime import datetime, timedelta
@@ -54,7 +54,7 @@ async def get_me(current_user: User = Depends(get_current_user)):
 async def update_me(
     profile: UserProfileUpdate,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_owner),
 ):
     data = profile.model_dump(exclude_unset=True)
     for field, value in data.items():
@@ -68,7 +68,7 @@ async def update_me(
 async def upload_logo(
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_owner),
 ):
     if file.content_type not in ALLOWED_LOGO_TYPES:
         raise HTTPException(status_code=400, detail="Logo must be a PNG, JPEG, or WEBP image.")

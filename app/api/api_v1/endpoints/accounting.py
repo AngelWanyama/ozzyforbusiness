@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional
 from datetime import datetime, timedelta
-from app.api.deps import get_db, get_current_user
+from app.api.deps import get_db, require_owner
 from app.models.user import User
 from app.schemas.report import ReportType, TimePeriod, AccountingReport
 from app.services.report_engine import report_engine
@@ -14,7 +14,7 @@ router = APIRouter()
 async def get_accounting_report(
     *,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_owner),
     report_type: ReportType = Query(..., alias="type"),
     period: TimePeriod = Query(TimePeriod.MONTHLY),
     start_date: Optional[datetime] = None,
