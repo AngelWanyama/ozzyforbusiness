@@ -24,6 +24,15 @@
   --color-ozzy-purple-dark: #2E0054;
 }
 
+/* This project's custom spacing scale (tailwind.config.js) reuses names like "sm"/"md"/"lg"/"xl"
+   for padding/gap/margin. In this Tailwind v4 setup, max-w-sm/md/lg/xl (and any other utility
+   sharing those key names) resolve from that same spacing scale ahead of the standard container
+   scale, so they silently collapse to a tiny spacing value (e.g. max-w-md became 16px) instead of
+   a real content width. Renaming the whole spacing scale to avoid the collision would touch every
+   p-md/gap-lg/etc. in the app, so known affected spots use an explicit arbitrary value instead
+   (e.g. max-w-[28rem]) rather than the bare max-w-md/sm/lg/xl names — see Inventory.tsx and
+   Login.tsx. */
+
 body {
   font-family: 'IBM Plex Sans', system-ui, -apple-system, sans-serif;
   background: #F8FAFC;

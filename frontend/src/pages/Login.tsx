@@ -472,7 +472,7 @@ export default function Login() {
           <h2 className="fade-up text-[2.4rem] font-bold text-white mb-3 leading-[1.15] tracking-tight">
             Track your business by chatting.
           </h2>
-          <p className="fade-up fade-up-d1 text-purple-100/90 text-lg max-w-md">
+          <p className="fade-up fade-up-d1 text-purple-100/90 text-lg max-w-[28rem]">
             No spreadsheets, no accounting software, no training required.
           </p>
         </div>

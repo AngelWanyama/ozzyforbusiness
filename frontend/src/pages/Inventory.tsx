@@ -104,7 +104,7 @@ export default function Inventory() {
 
       {showModal && (
         <div className="fixed inset-0 z-30 bg-black/40 flex items-end sm:items-center justify-center" onClick={() => setShowModal(false)}>
-          <div className="bg-white dark:bg-gray-800 rounded-2xl rounded-b-none sm:rounded-2xl p-6 w-full max-w-md" onClick={e => e.stopPropagation()}>
+          <div className="bg-white dark:bg-gray-800 rounded-2xl rounded-b-none sm:rounded-2xl p-6 w-full max-w-[28rem]" onClick={e => e.stopPropagation()}>
             <h2 className="font-bold text-lg text-gray-900 dark:text-white mb-4">{editItem ? 'Edit Item' : 'Add Item'}</h2>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
