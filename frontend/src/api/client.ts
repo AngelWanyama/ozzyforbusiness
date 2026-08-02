@@ -1,5 +1,15 @@
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
 
+// Carries the real HTTP status alongside the message, so callers can branch on e.g.
+// "was this a 403 (not permitted)?" reliably instead of guessing from the message text.
+export class ApiError extends Error {
+  status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.status = status;
+  }
+}
+
 class ApiClient {
   private baseUrl = API_BASE;
 
@@ -20,10 +30,17 @@ class ApiClient {
     const headers: Record<string, string> = { 'Content-Type': 'application/json', ...(options.headers as Record<string, string>) };
     if (token) headers['Authorization'] = `Bearer ${token}`;
     const res = await fetch(`${this.baseUrl}${endpoint}`, { ...options, headers });
-    if (res.status === 403 || res.status === 401) { this.clearToken(); window.location.hash = '#/login'; throw new Error('Auth failed'); }
+    // 401 = not logged in (or the session expired) -> force back to login.
+    // 403 = logged in, but not allowed to do this (e.g. a Worker hitting an owner-only endpoint) ->
+    // let the calling page decide what to show instead of silently logging the person out.
+    if (res.status === 401) { this.clearToken(); window.location.hash = '#/login'; throw new ApiError('Auth failed', 401); }
+    if (res.status === 403) {
+      const data = await res.json().catch(() => ({}));
+      throw new ApiError(data.detail || 'You do not have permission to do that.', 403);
+    }
     if (res.headers.get('content-type')?.includes('application/pdf')) return res as any;
     const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || `Request failed: ${res.status}`);
+    if (!res.ok) throw new ApiError(data.detail || `Request failed: ${res.status}`, res.status);
     return data;
   }
 
@@ -162,7 +179,7 @@ class ApiClient {
       headers: token ? { Authorization: `Bearer ${token}` } : {},
       body: formData,
     });
-    if (res.status === 403 || res.status === 401) { this.clearToken(); window.location.hash = '#/login'; throw new Error('Auth failed'); }
+    if (res.status === 401) { this.clearToken(); window.location.hash = '#/login'; throw new Error('Auth failed'); }
     const data = await res.json();
     if (!res.ok) throw new Error(data.detail || `Request failed: ${res.status}`);
     return data;

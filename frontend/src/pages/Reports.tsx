@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import api from '../api/client';
+import api, { ApiError } from '../api/client';
 
 function Icon({ name, className = '', fill = false }: { name: string; className?: string; fill?: boolean }) {
   return <span className={`material-symbols-outlined ${className}`} style={fill ? { fontVariationSettings: "'FILL' 1" } : undefined}>{name}</span>;
@@ -53,7 +53,7 @@ export default function Reports() {
       const d: any = await (api as any).request(`/reports/dashboard?period=${p}`);
       setData(d);
     } catch (e: any) {
-      setError(e?.message?.includes('403') ? 'Reports are only available to the business owner.' : "Couldn't load your reports. Please try again.");
+      setError(e instanceof ApiError && e.status === 403 ? 'Reports are only available to the business owner.' : "Couldn't load your reports. Please try again.");
     } finally {
       setLoading(false);
     }
