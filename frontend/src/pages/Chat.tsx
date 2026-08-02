@@ -43,6 +43,7 @@ export default function Chat() {
   const [awaitingFieldFor, setAwaitingFieldFor] = useState<'contact_phone' | 'email' | null>(null);
 
   const [scanning, setScanning] = useState(false);
+  const [chips, setChips] = useState<string[]>(['Record a sale', 'Record an expense', 'Check stock']);
 
   const endRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -290,6 +291,25 @@ export default function Chat() {
 
   // ─── Setup ───────────────────────────────────────────────────────────────────
 
+  // Maps a greeting/quick-action chip's label to what tapping it should do.
+  const runChip = (label: string) => {
+    const l = label.toLowerCase();
+    if (l.includes('sale')) { setInput('Sold '); return; }
+    if (l.includes('expense')) { setInput('Paid '); return; }
+    if (l.includes('stock')) { navigate('/inventory'); return; }
+    if (l.includes('invoice')) { navigate('/invoices'); return; }
+    if (l.includes('report')) { navigate('/reports'); return; }
+    if (l.includes('activity') || l.includes('yesterday')) { navigate('/transactions'); return; }
+    setInput(label);
+  };
+
+  const loadGreeting = () => (api as any).request('/chat/greeting')
+    .then((g: any) => {
+      push({ role: 'ozzy', kind: 'text', text: g.text });
+      if (Array.isArray(g.chips) && g.chips.length) setChips(g.chips);
+    })
+    .catch(() => push({ role: 'ozzy', kind: 'text', text: WELCOME_BACK_TEXT }));
+
   useEffect(() => {
     api.getMe().then((u: any) => {
       setProfile(u);
@@ -297,7 +317,7 @@ export default function Chat() {
       if (u?.role === 'owner' && !u?.onboarding_completed) {
         askOnboardStep(0, {});
       } else {
-        push({ role: 'ozzy', kind: 'text', text: WELCOME_BACK_TEXT });
+        loadGreeting();
       }
     }).catch(() => {
       push({ role: 'ozzy', kind: 'text', text: WELCOME_BACK_TEXT });
@@ -521,12 +541,12 @@ export default function Chat() {
         <div className="max-w-2xl mx-auto">
           {onboardIndex === null && (
             <div className="flex gap-sm mb-md overflow-x-auto pb-2 no-scrollbar">
-              <button onClick={() => setInput('Sold ')} className="whitespace-nowrap px-lg py-2 bg-white border border-outline-variant rounded-full font-label-md text-label-md text-on-surface-variant hover:border-primary hover:text-primary transition-all shadow-sm">Record a sale</button>
-              <button onClick={() => setInput('Paid ')} className="whitespace-nowrap px-lg py-2 bg-white border border-outline-variant rounded-full font-label-md text-label-md text-on-surface-variant hover:border-primary hover:text-primary transition-all shadow-sm">Record an expense</button>
+              {chips.map(label => (
+                <button key={label} onClick={() => runChip(label)} className="whitespace-nowrap px-lg py-2 bg-white border border-outline-variant rounded-full font-label-md text-label-md text-on-surface-variant hover:border-primary hover:text-primary transition-all shadow-sm">{label}</button>
+              ))}
               <button onClick={() => receiptInputRef.current?.click()} disabled={scanning} className="whitespace-nowrap flex items-center gap-1 px-lg py-2 bg-white border border-outline-variant rounded-full font-label-md text-label-md text-on-surface-variant hover:border-primary hover:text-primary transition-all shadow-sm disabled:opacity-50">
                 <Icon name="photo_camera" className="text-[16px]" /> {scanning ? 'Reading receipt…' : 'Scan a receipt'}
               </button>
-              <button onClick={() => navigate('/inventory')} className="whitespace-nowrap px-lg py-2 bg-white border border-outline-variant rounded-full font-label-md text-label-md text-on-surface-variant hover:border-primary hover:text-primary transition-all shadow-sm">Check stock</button>
             </div>
           )}
           <div className="relative flex items-center group">

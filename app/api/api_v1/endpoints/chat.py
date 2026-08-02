@@ -1,10 +1,14 @@
+from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from sqlalchemy.ext.asyncio import AsyncSession
 from app.schemas.chat import ChatRequest
 from app.schemas.nlp import NLPTransactionResponse
 from app.schemas.receipt import ReceiptScanResponse
+from app.schemas.greeting import GreetingResponse
 from app.services.nlp_parser import nlp_parser
 from app.services.receipt_scanner import receipt_scanner
-from app.api.deps import get_current_user
+from app.services.greeting_engine import get_greeting
+from app.api.deps import get_current_user, get_db
 from app.models.user import User
 
 router = APIRouter()
@@ -39,5 +43,29 @@ async def scan_receipt(
     try:
         result = await receipt_scanner.scan_receipt(contents, file.content_type, user_currency=current_user.currency)
         return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/greeting", response_model=GreetingResponse)
+async def get_chat_greeting(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    # Workers can't see profit/totals, so they get a simple greeting with no figures in it —
+    # the full financial greeting engine is owner-only.
+    if current_user.role == "worker":
+        hour = (datetime.utcnow().hour + 3) % 24  # EAT
+        greeting = "Good morning" if hour < 12 else ("Good afternoon" if hour < 17 else "Good evening")
+        name = current_user.owner_name or "there"
+        return GreetingResponse(
+            text=f"👋 {greeting}, {name}! Ready to record today's sales and expenses?",
+            chips=["Record a sale", "Record an expense", "Check stock"],
+            scenario="worker",
+        )
+
+    try:
+        result = await get_greeting(db, current_user)
+        return GreetingResponse(**result)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
