@@ -12,6 +12,104 @@
   --ozzy-purple-dark: #2E0054;
   /* Strong easing curves for UI motion */
   --ease-out-strong: cubic-bezier(0.23, 1, 0.32, 1);
+
+  /* Design-system tokens (tailwind.config.js references these as var(--color-*), so a single
+     .dark override block below is enough to re-theme every bg-*/text-* utility built from them —
+     previously these were static hex values with no dark counterpart at all, so toggling .dark
+     changed nothing on any page built with this token set. */
+  --color-on-tertiary: #ffffff;
+  --color-surface: #fcf9f8;
+  --color-on-surface: #1c1b1b;
+  --color-on-error-container: #93000a;
+  --color-inverse-primary: #dcb8ff;
+  --color-inverse-on-surface: #f3f0ef;
+  --color-tertiary-container: #442000;
+  --color-on-background: #1c1b1b;
+  --color-surface-container-low: #f6f3f2;
+  --color-inverse-surface: #313030;
+  --color-on-primary-fixed-variant: #5e2c90;
+  --color-surface-container-lowest: #ffffff;
+  --color-surface-container-highest: #e5e2e1;
+  --color-secondary: #744c9a;
+  --color-tertiary-fixed: #ffdcc4;
+  --color-on-secondary-container: #5f3885;
+  --color-surface-container: #f0edec;
+  --color-primary: #3F0071;
+  --color-on-secondary: #ffffff;
+  --color-on-secondary-fixed: #2c0051;
+  --color-outline: #7d7482;
+  --color-surface-container-high: #ebe7e7;
+  --color-secondary-fixed: #f0dbff;
+  --color-on-tertiary-fixed-variant: #673c18;
+  --color-on-primary: #ffffff;
+  --color-on-primary-container: #ad79e1;
+  --color-secondary-fixed-dim: #ddb8ff;
+  --color-error-container: #ffdad6;
+  --color-on-error: #ffffff;
+  --color-secondary-container: #d5a9ff;
+  --color-primary-fixed: #f0dbff;
+  --color-on-tertiary-fixed: #2f1400;
+  --color-on-surface-variant: #4b4451;
+  --color-tertiary-fixed-dim: #f8b98a;
+  --color-error: #ba1a1a;
+  --color-outline-variant: #cec3d2;
+  --color-on-secondary-fixed-variant: #5b3481;
+  --color-on-tertiary-container: #bc855a;
+  --color-surface-bright: #fcf9f8;
+  --color-tertiary: #260f00;
+  --color-surface-variant: #e5e2e1;
+  --color-surface-dim: #dcd9d9;
+  --color-primary-fixed-dim: #dcb8ff;
+  --color-on-primary-fixed: #2c0051;
+  --color-surface-tint: #7846aa;
+  --color-background: #fcf9f8;
+  --color-primary-container: #3f0071;
+}
+
+/* Dark theme — only the tokens that are meant to actually change between light and dark (the
+   *-fixed/*-fixed-dim/on-*-fixed* tokens are intentionally identical in both, matching how this
+   Material-You-style palette is meant to work: they're for things that must stay one fixed color
+   regardless of theme, e.g. an always-purple chip on either background). */
+.dark {
+  --color-surface: #141218;
+  --color-surface-dim: #141218;
+  --color-surface-bright: #3b383e;
+  --color-surface-container-lowest: #0f0d13;
+  --color-surface-container-low: #1d1b20;
+  --color-surface-container: #211f26;
+  --color-surface-container-high: #2b2930;
+  --color-surface-container-highest: #36343b;
+  --color-surface-variant: #49454e;
+  --color-background: #141218;
+  --color-on-surface: #e6e0e9;
+  --color-on-surface-variant: #cac4d0;
+  --color-on-background: #e6e0e9;
+  --color-outline: #948f99;
+  --color-outline-variant: #49454e;
+  --color-inverse-surface: #e6e0e9;
+  --color-inverse-on-surface: #313030;
+  --color-inverse-primary: #3F0071;
+  --color-surface-tint: #dcb8ff;
+
+  --color-primary: #dcb8ff;
+  --color-on-primary: #4b1c78;
+  --color-primary-container: #5e2c90;
+  --color-on-primary-container: #f0dbff;
+
+  --color-secondary: #ddb8ff;
+  --color-on-secondary: #40216a;
+  --color-secondary-container: #5b3481;
+  --color-on-secondary-container: #f0dbff;
+
+  --color-tertiary: #f8b98a;
+  --color-on-tertiary: #452b00;
+  --color-tertiary-container: #673c18;
+  --color-on-tertiary-container: #ffdcc4;
+
+  --color-error: #ffb4ab;
+  --color-on-error: #690005;
+  --color-error-container: #93000a;
+  --color-on-error-container: #ffdad6;
 }
 
 @theme {
@@ -43,10 +141,9 @@ h1, h2, h3, h4, h5, h6 {
   font-family: 'Bricolage Grotesque', system-ui, -apple-system, sans-serif;
 }
 
-.dark body,
-.dark {
-  background: #0F172A;
-  color: #E2E8F0;
+.dark body {
+  background: var(--color-surface);
+  color: var(--color-on-surface);
 }
 
 /* ---- Entrance animation: gentle fade-up ---- */
