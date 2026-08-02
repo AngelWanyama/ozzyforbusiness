@@ -413,43 +413,64 @@ export default function Settings() {
             </div>
           </div>
 
-          {/* Business Settings */}
+          {/* Business Settings — read-only labels until "Edit Profile" is tapped above */}
           <div className="md:col-span-2 bg-surface p-lg rounded-xl border border-outline-variant space-y-lg">
             <h4 className="font-headline-md text-headline-md text-primary flex items-center gap-2 text-[24px]"><Icon name="business" /> Business Settings</h4>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-lg">
               <div className="space-y-sm">
                 <label className="font-label-md text-label-md text-on-surface-variant ml-1">Business Name</label>
-                <div className="h-[52px] bg-surface-container-low border border-outline-variant rounded-lg flex items-center px-md gap-sm focus-within:border-primary transition-colors">
-                  <span className="text-outline text-[20px]"><Icon name="corporate_fare" /></span>
-                  <input value={businessName} onChange={e => setBusinessName(e.target.value)} placeholder="Enter your business name" className="bg-transparent border-none focus:ring-0 w-full font-body-md outline-none" type="text" />
-                </div>
+                {editingProfile ? (
+                  <div className="h-[52px] bg-surface-container-low border border-outline-variant rounded-lg flex items-center px-md gap-sm focus-within:border-primary transition-colors">
+                    <span className="text-outline text-[20px]"><Icon name="corporate_fare" /></span>
+                    <input value={businessName} onChange={e => setBusinessName(e.target.value)} placeholder="Enter your business name" className="bg-transparent border-none focus:ring-0 w-full font-body-md outline-none" type="text" />
+                  </div>
+                ) : (
+                  <div className="h-[52px] flex items-center px-md gap-sm">
+                    <span className="text-outline text-[20px]"><Icon name="corporate_fare" /></span>
+                    <span className="font-body-md text-body-md text-on-surface">{businessName || 'Not set'}</span>
+                  </div>
+                )}
               </div>
               <div className="space-y-sm">
                 <label className="font-label-md text-label-md text-on-surface-variant ml-1">Currency</label>
-                <div className="h-[52px] bg-surface-container-low border border-outline-variant rounded-lg flex items-center px-md gap-sm focus-within:border-primary transition-colors">
-                  <span className="text-outline text-[20px]"><Icon name="payments" /></span>
-                  <select value={currency} onChange={e => setCurrency(e.target.value)} className="bg-transparent border-none focus:ring-0 w-full font-body-md outline-none">
-                    {AFRICA_CURRENCIES.map(c => <option key={c.code} value={c.code}>{c.label}</option>)}
-                  </select>
-                </div>
+                {editingProfile ? (
+                  <div className="h-[52px] bg-surface-container-low border border-outline-variant rounded-lg flex items-center px-md gap-sm focus-within:border-primary transition-colors">
+                    <span className="text-outline text-[20px]"><Icon name="payments" /></span>
+                    <select value={currency} onChange={e => setCurrency(e.target.value)} className="bg-transparent border-none focus:ring-0 w-full font-body-md outline-none">
+                      {AFRICA_CURRENCIES.map(c => <option key={c.code} value={c.code}>{c.label}</option>)}
+                    </select>
+                  </div>
+                ) : (
+                  <div className="h-[52px] flex items-center px-md gap-sm">
+                    <span className="text-outline text-[20px]"><Icon name="payments" /></span>
+                    <span className="font-body-md text-body-md text-on-surface">{AFRICA_CURRENCIES.find(c => c.code === currency)?.label || currency}</span>
+                  </div>
+                )}
               </div>
               <div className="space-y-sm">
                 <label className="font-label-md text-label-md text-on-surface-variant ml-1">Business Type</label>
-                <div className="h-[52px] bg-surface-container-low border border-outline-variant rounded-lg flex items-center px-md gap-sm focus-within:border-primary transition-colors">
-                  <span className="text-outline text-[20px]"><Icon name="category" /></span>
-                  <select value={businessType} onChange={e => setBusinessType(e.target.value)} className="bg-transparent border-none focus:ring-0 w-full font-body-md outline-none">
-                    <option value="">Select a type</option>
-                    <option>Retail &amp; Distribution</option>
-                    <option>Food &amp; Restaurant</option>
-                    <option>Salon &amp; Beauty</option>
-                    <option>Fashion &amp; Tailoring</option>
-                    <option>Services</option>
-                    <option>Agriculture</option>
-                    <option>Logistics</option>
-                    <option>Technology &amp; Software</option>
-                    <option>Other</option>
-                  </select>
-                </div>
+                {editingProfile ? (
+                  <div className="h-[52px] bg-surface-container-low border border-outline-variant rounded-lg flex items-center px-md gap-sm focus-within:border-primary transition-colors">
+                    <span className="text-outline text-[20px]"><Icon name="category" /></span>
+                    <select value={businessType} onChange={e => setBusinessType(e.target.value)} className="bg-transparent border-none focus:ring-0 w-full font-body-md outline-none">
+                      <option value="">Select a type</option>
+                      <option>Retail &amp; Distribution</option>
+                      <option>Food &amp; Restaurant</option>
+                      <option>Salon &amp; Beauty</option>
+                      <option>Fashion &amp; Tailoring</option>
+                      <option>Services</option>
+                      <option>Agriculture</option>
+                      <option>Logistics</option>
+                      <option>Technology &amp; Software</option>
+                      <option>Other</option>
+                    </select>
+                  </div>
+                ) : (
+                  <div className="h-[52px] flex items-center px-md gap-sm">
+                    <span className="text-outline text-[20px]"><Icon name="category" /></span>
+                    <span className="font-body-md text-body-md text-on-surface">{businessType || 'Not set'}</span>
+                  </div>
+                )}
               </div>
               <div className="flex items-center gap-lg p-md bg-surface-container-lowest border border-dashed border-outline-variant rounded-lg">
                 <div className="w-16 h-16 bg-surface-container rounded-lg flex items-center justify-center text-outline text-[24px] overflow-hidden shrink-0">
@@ -462,18 +483,22 @@ export default function Settings() {
                 <div className="flex-grow">
                   <h5 className="font-label-md text-label-md text-on-surface font-bold">Business Logo</h5>
                   <p className="text-[12px] text-on-surface-variant italic">used on invoices &amp; receipts</p>
-                  <button onClick={() => fileInputRef.current?.click()} disabled={logoUploading} className="text-primary font-bold text-[14px] mt-1 hover:underline disabled:opacity-50">
-                    {logoUploading ? 'Uploading...' : 'Change Logo'}
-                  </button>
+                  {editingProfile && (
+                    <button onClick={() => fileInputRef.current?.click()} disabled={logoUploading} className="text-primary font-bold text-[14px] mt-1 hover:underline disabled:opacity-50">
+                      {logoUploading ? 'Uploading...' : 'Change Logo'}
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
-            <div className="flex items-center gap-md">
-              <button onClick={save} disabled={saving} className="h-12 px-xl flex items-center justify-center bg-primary text-white rounded-xl font-bold hover:opacity-90 transition-all active:scale-95 duration-200 disabled:opacity-50">
-                {saving ? 'Saving...' : 'Save Changes'}
-              </button>
-              {saved && <span className="flex items-center gap-1 text-green-600 font-label-md"><span className="text-[18px]"><Icon name="check_circle" /></span> Saved</span>}
-            </div>
+            {editingProfile && (
+              <div className="flex items-center gap-md">
+                <button onClick={save} disabled={saving} className="h-12 px-xl flex items-center justify-center bg-primary text-white rounded-xl font-bold hover:opacity-90 transition-all active:scale-95 duration-200 disabled:opacity-50">
+                  {saving ? 'Saving...' : 'Save Changes'}
+                </button>
+                {saved && <span className="flex items-center gap-1 text-green-600 font-label-md"><span className="text-[18px]"><Icon name="check_circle" /></span> Saved</span>}
+              </div>
+            )}
           </div>
 
           {/* App Settings */}
