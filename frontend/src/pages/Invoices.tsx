@@ -34,10 +34,9 @@ interface Invoice {
 }
 
 export const TEMPLATES = [
-  { id: 'professional', name: 'Professional', color: 'from-[#0D9488] to-[#0B7A70]', desc: 'Clean teal header, modern layout' },
-  { id: 'modern', name: 'Modern', color: 'from-[#1E293B] to-[#334155]', desc: 'Dark header, contemporary style' },
-  { id: 'simple', name: 'Simple', color: 'from-gray-100 to-white', desc: 'Minimal, no color accents' },
-  { id: 'custom', name: 'Custom', color: 'from-[#F97316] to-[#EA580C]', desc: 'Warm orange, your brand' },
+  { id: 'clean_minimal', name: 'Clean Minimal', color: 'from-gray-100 to-white', desc: 'Quiet, professional — best for formal or corporate billing' },
+  { id: 'bold_branded', name: 'Bold Branded', color: 'from-[#3F0071] to-[#2E0054]', desc: 'Full Ozzy purple & teal — best for retail, fashion, beauty' },
+  { id: 'classic_ledger', name: 'Classic Ledger', color: 'from-[#F7F1E3] to-[#EDE3CC]', desc: 'Cream, boxed like a receipt book — best for market vendors' },
 ];
 
 const fmt = (n: number | string) => {
@@ -392,12 +391,53 @@ function ConversationalInvoiceCreator({ onCreated }: { onCreated: () => void }) 
   );
 }
 
+// ─── Template picker ──────────────────────────────────────────────────────────
+// Lets the owner pick which of the 3 templates auto-applies to every invoice/receipt
+// they generate from now on (saved to their profile via PATCH /users/me).
+function TemplatePicker() {
+  const [current, setCurrent] = useState<string>('clean_minimal');
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => { api.getMe().then((u: any) => setCurrent(u?.receipt_template || 'clean_minimal')).catch(() => {}); }, []);
+
+  const choose = async (id: string) => {
+    if (id === current || saving) return;
+    setSaving(true);
+    const previous = current;
+    setCurrent(id);
+    try { await (api as any).updateMe({ receipt_template: id }); }
+    catch { setCurrent(previous); }
+    finally { setSaving(false); }
+  };
+
+  return (
+    <div className="bg-white dark:bg-gray-800 rounded-2xl p-4 border border-gray-100 dark:border-gray-700 mb-4">
+      <p className="text-sm font-semibold text-gray-900 dark:text-white mb-3">Invoice &amp; Receipt Template</p>
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        {TEMPLATES.map(t => (
+          <button key={t.id} onClick={() => choose(t.id)}
+            className={`text-left rounded-xl border-2 overflow-hidden transition ${current === t.id ? 'border-[#3F0071]' : 'border-transparent'}`}>
+            <div className={`h-10 bg-gradient-to-r ${t.color}`} />
+            <div className="p-2.5 bg-gray-50 dark:bg-gray-700/50">
+              <p className="text-xs font-semibold text-gray-900 dark:text-white flex items-center gap-1">
+                {t.name} {current === t.id && <Check size={12} className="text-[#3F0071]" />}
+              </p>
+              <p className="text-[10px] text-gray-500 dark:text-gray-400">{t.desc}</p>
+            </div>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ─── Main Invoices Page ─────────────────────────────────────────────────────
 export default function Invoices() {
   const [step, setStep] = useState<Step>('list');
 
   return (
     <div>
+      {step === 'list' && <TemplatePicker />}
       {step === 'list' && <InvoiceListView onCreate={() => setStep('create')} />}
       {step === 'create' && <ConversationalInvoiceCreator onCreated={() => setStep('list')} />}
     </div>
