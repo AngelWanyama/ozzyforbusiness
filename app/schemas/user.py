@@ -34,6 +34,11 @@ class UserProfile(BaseModel):
     class Config:
         from_attributes = True
 
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
+
+
 class UserProfileUpdate(BaseModel):
     business_name: Optional[str] = None
     business_type: Optional[str] = None

@@ -473,7 +473,7 @@ export default function Login() {
             Track your business by chatting.
           </h2>
           <p className="fade-up fade-up-d1 text-purple-100/90 text-lg max-w-[28rem]">
-            No spreadsheets, no accounting software, no training required.
+            No spreadsheets, no complicated software, no training required.
           </p>
         </div>
 

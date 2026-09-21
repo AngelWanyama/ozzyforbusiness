@@ -9,6 +9,7 @@ venv/
 # Database
 *.db
 *.sqlite3
+*.db.*-backup
 
 # OS
 .DS_Store

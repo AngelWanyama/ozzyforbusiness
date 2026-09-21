@@ -99,6 +99,7 @@ class SummaryGenerator:
         # Save summary
         summary = Summary(
             user_id=user.id,
+            business_id=user.business_id or user.id,
             type=summary_type,
             period_start=start_date,
             period_end=end_date,

@@ -7,3 +7,5 @@ from app.models.summary import Summary
 from app.models.payment import Payment
 from app.models.invite import Invite
 from app.models.invoice import Invoice, InvoiceItem
+from app.models.customer import Customer
+from app.models.chat_proposal import ChatProposal

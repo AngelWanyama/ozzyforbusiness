@@ -8,7 +8,7 @@ from app.models.invoice import Invoice
 from app.models.item import Item
 from app.models.user import User
 
-# Uganda runs on East Africa Time (UTC+3, no daylight saving) — everything in this app is
+# Uganda runs on East Africa Time (UTC+3, no daylight saving), everything in this app is
 # stored as naive UTC, so greetings are computed in EAT just for the purposes of deciding
 # "good morning" vs "good evening" and what counts as "today".
 EAT_OFFSET = timedelta(hours=3)
@@ -16,7 +16,7 @@ EAT_OFFSET = timedelta(hours=3)
 LOW_STOCK_THRESHOLD = Decimal(5)  # no reorder-point field exists yet; a small fixed threshold is a reasonable stand-in
 WEEKLY_MILESTONE_PCT = 15.0       # how much this week must beat last week by to count as a "milestone"
 WEEKLY_MILESTONE_MIN_BASELINE = Decimal(10000)  # last week needs at least this much in real sales before a
-                                                 # % comparison against it means anything — otherwise a near-zero
+                                                 # % comparison against it means anything, otherwise a near-zero
                                                  # prior week turns one small sale into a meaningless "+4900%"
 SLOW_DAY_RATIO = 0.7              # today-so-far must be under 70% of yesterday-at-this-same-time to count as "slow"
 

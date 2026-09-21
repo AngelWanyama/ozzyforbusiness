@@ -22,6 +22,7 @@ class Payment(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    business_id = Column(UUID(as_uuid=True), nullable=False, index=True)
     plan_type = Column(String, nullable=False) # e.g. "monthly_premium", "yearly_pro"
     amount = Column(Numeric(precision=10, scale=2), nullable=False)
     currency = Column(String, nullable=False, default="UGX")

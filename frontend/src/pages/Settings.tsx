@@ -137,6 +137,15 @@ export default function Settings() {
   const [workersLoading, setWorkersLoading] = useState(false);
   const [workersError, setWorkersError] = useState('');
 
+  // Change Password
+  const [changePasswordOpen, setChangePasswordOpen] = useState(false);
+  const [currentPasswordInput, setCurrentPasswordInput] = useState('');
+  const [newPasswordInput, setNewPasswordInput] = useState('');
+  const [confirmPasswordInput, setConfirmPasswordInput] = useState('');
+  const [changingPassword, setChangingPassword] = useState(false);
+  const [changePasswordError, setChangePasswordError] = useState('');
+  const [changePasswordDone, setChangePasswordDone] = useState(false);
+
   useEffect(() => {
     document.documentElement.classList.toggle('dark', dark);
     localStorage.setItem('ozzy_dark', dark ? '1' : '0');
@@ -271,6 +280,31 @@ export default function Settings() {
       setWorkersError(err?.message || 'Could not load your workers. Please try again.');
     } finally {
       setWorkersLoading(false);
+    }
+  };
+
+  const openChangePassword = () => {
+    setChangePasswordOpen(true);
+    setCurrentPasswordInput('');
+    setNewPasswordInput('');
+    setConfirmPasswordInput('');
+    setChangePasswordError('');
+    setChangePasswordDone(false);
+  };
+
+  const submitChangePassword = async () => {
+    setChangePasswordError('');
+    if (!currentPasswordInput) { setChangePasswordError('Enter your current password.'); return; }
+    if (newPasswordInput.length < 6) { setChangePasswordError('New password must be at least 6 characters.'); return; }
+    if (newPasswordInput !== confirmPasswordInput) { setChangePasswordError('New passwords do not match.'); return; }
+    setChangingPassword(true);
+    try {
+      await api.changePassword(currentPasswordInput, newPasswordInput);
+      setChangePasswordDone(true);
+    } catch (err: any) {
+      setChangePasswordError(err?.message || 'Could not change your password. Please try again.');
+    } finally {
+      setChangingPassword(false);
     }
   };
 
@@ -532,7 +566,10 @@ export default function Settings() {
           <div className="bg-surface p-lg rounded-xl border border-outline-variant space-y-md">
             <h4 className="font-headline-md text-headline-md text-primary flex items-center gap-2 text-[24px]"><Icon name="shield" /> Security</h4>
             <div className="flex flex-col">
-              <ComingSoonRow icon="pin" label="Change PIN" onClick={() => comingSoon('Change PIN')} />
+              <button onClick={openChangePassword} className="flex items-center justify-between p-md hover:bg-surface-container-low transition-colors rounded-lg group">
+                <span className="font-label-md text-label-md text-on-surface-variant">Change Password</span>
+                <span className="text-outline group-hover:translate-x-1 transition-transform text-[20px]"><Icon name="lock_reset" /></span>
+              </button>
               <div className="flex items-center justify-between p-md rounded-lg opacity-60">
                 <span className="flex items-center gap-2">
                   <span className="font-label-md text-label-md text-on-surface-variant">Biometric Login</span>
@@ -668,6 +705,61 @@ export default function Settings() {
             )}
             <button onClick={() => setAddWorkerOpen(false)} className="mt-lg h-12 w-full flex items-center justify-center border border-outline-variant text-on-surface rounded-xl font-bold hover:bg-surface-container-low transition-all active:scale-95 duration-200">
               Close
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Change Password modal */}
+      {changePasswordOpen && (
+        <div className="fixed inset-0 z-30 bg-black/40 flex items-end sm:items-center justify-center" onClick={() => setChangePasswordOpen(false)}>
+          <div className="bg-surface rounded-t-2xl sm:rounded-2xl p-xl w-full sm:max-w-[28rem] max-h-[80vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <h2 className="font-headline-md text-headline-md text-primary mb-md flex items-center gap-2"><Icon name="lock_reset" /> Change Password</h2>
+            {changePasswordDone ? (
+              <div className="text-center py-lg">
+                <Icon name="check_circle" className="text-green-600 text-[40px]" />
+                <p className="font-body-md text-body-md text-on-surface mt-md">Your password has been changed.</p>
+              </div>
+            ) : (
+              <>
+                <p className="font-body-md text-body-md text-on-surface-variant mb-lg">
+                  For your security, confirm your current password before setting a new one.
+                </p>
+                <div className="space-y-md">
+                  <div>
+                    <label className="font-label-md text-label-md text-on-surface-variant ml-1">Current password</label>
+                    <div className="h-[52px] mt-1 bg-surface-container-low border border-outline-variant rounded-lg flex items-center px-md gap-sm focus-within:border-primary transition-colors">
+                      <Icon name="lock" className="text-outline text-[20px]" />
+                      <input value={currentPasswordInput} onChange={e => setCurrentPasswordInput(e.target.value)} className="bg-transparent border-none focus:ring-0 w-full font-body-md outline-none" type="password" autoComplete="current-password" />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="font-label-md text-label-md text-on-surface-variant ml-1">New password</label>
+                    <div className="h-[52px] mt-1 bg-surface-container-low border border-outline-variant rounded-lg flex items-center px-md gap-sm focus-within:border-primary transition-colors">
+                      <Icon name="lock_reset" className="text-outline text-[20px]" />
+                      <input value={newPasswordInput} onChange={e => setNewPasswordInput(e.target.value)} className="bg-transparent border-none focus:ring-0 w-full font-body-md outline-none" type="password" autoComplete="new-password" placeholder="At least 6 characters" />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="font-label-md text-label-md text-on-surface-variant ml-1">Confirm new password</label>
+                    <div className="h-[52px] mt-1 bg-surface-container-low border border-outline-variant rounded-lg flex items-center px-md gap-sm focus-within:border-primary transition-colors">
+                      <Icon name="lock_reset" className="text-outline text-[20px]" />
+                      <input value={confirmPasswordInput} onChange={e => setConfirmPasswordInput(e.target.value)} className="bg-transparent border-none focus:ring-0 w-full font-body-md outline-none" type="password" autoComplete="new-password" />
+                    </div>
+                  </div>
+                </div>
+                {changePasswordError && <p className="text-red-600 text-sm mt-md">{changePasswordError}</p>}
+                <button
+                  onClick={submitChangePassword}
+                  disabled={changingPassword}
+                  className="mt-lg h-12 w-full flex items-center justify-center bg-primary text-white rounded-xl font-bold hover:opacity-90 transition-all active:scale-95 duration-200 disabled:opacity-50"
+                >
+                  {changingPassword ? 'Changing…' : 'Change Password'}
+                </button>
+              </>
+            )}
+            <button onClick={() => setChangePasswordOpen(false)} className="mt-lg h-12 w-full flex items-center justify-center border border-outline-variant text-on-surface rounded-xl font-bold hover:bg-surface-container-low transition-all active:scale-95 duration-200">
+              {changePasswordDone ? 'Close' : 'Cancel'}
             </button>
           </div>
         </div>

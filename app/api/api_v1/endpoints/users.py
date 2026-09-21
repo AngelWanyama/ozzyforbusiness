@@ -4,7 +4,8 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_db, get_current_user, require_owner
 from app.models.user import User, PlanType
-from app.schemas.user import UserPlan, UserUsage, UserUpgrade, UserProfile, UserProfileUpdate
+from app.schemas.user import UserPlan, UserUsage, UserUpgrade, UserProfile, UserProfileUpdate, ChangePasswordRequest
+from app.core.security import hash_password, verify_password
 from datetime import datetime, timedelta
 
 router = APIRouter()
@@ -62,6 +63,25 @@ async def update_me(
     await db.commit()
     await db.refresh(current_user)
     return current_user
+
+
+@router.post("/me/change-password")
+async def change_password(
+    body: ChangePasswordRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Account-level (L4) action per the Brain doc's authority table — requires the current
+    password as re-authentication, not just a confirm click. Available to Owner and Worker
+    alike, since it's about the signed-in person's own login, not a business-data change."""
+    if not current_user.password_hash or not verify_password(body.current_password, current_user.password_hash):
+        raise HTTPException(status_code=400, detail="Current password is incorrect.")
+    if len(body.new_password) < 6:
+        raise HTTPException(status_code=400, detail="New password must be at least 6 characters.")
+
+    current_user.password_hash = hash_password(body.new_password)
+    await db.commit()
+    return {"ok": True}
 
 
 @router.post("/me/logo", response_model=UserProfile)

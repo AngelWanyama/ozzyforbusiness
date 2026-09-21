@@ -187,7 +187,7 @@ class ReportEngineService:
 
     async def generate_ai_summary(self, report_type: ReportType, data: Dict, user_name: str) -> str:
         if not ai_client.is_available:
-            return "AI summary is not available at the moment. Please configure the GROQ_API_KEY."
+            return "AI summary is not available at the moment. Please configure the OPENAI_API_KEY."
 
         prompt = f"""
         You are a financial advisor for 'Ozzy for Business', helping small business owners in Africa understand their financial reports.

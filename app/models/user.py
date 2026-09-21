@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 import enum
-from sqlalchemy import Column, String, DateTime, Enum as SQLEnum, Integer, Boolean
+from sqlalchemy import Column, String, DateTime, Enum as SQLEnum, Integer, Boolean, JSON
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from app.core.database import Base
@@ -28,6 +28,11 @@ class User(Base):
     notifications_enabled = Column(Boolean, default=True, nullable=False)
     receipt_template = Column(String, default="clean_minimal", nullable=False)
     onboarding_completed = Column(Boolean, default=False, nullable=False)
+    # Free-form onboarding state per Volume 3 §3.20/§3.21 of the Brain doc: what's known, what's
+    # been declined, so onboarding can be paused and resumed without re-asking anything already
+    # answered. Not a fixed column set on purpose, the facts it holds (employees count, products
+    # mentioned, stock items with prices) don't all have a permanent home elsewhere yet.
+    onboarding_state = Column(JSON, nullable=True)
     currency = Column(String, default="UGX")
     role = Column(String, default="owner", nullable=False)  # "owner" or "worker"
     business_id = Column(UUID(as_uuid=True), nullable=True, index=True)

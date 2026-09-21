@@ -15,14 +15,14 @@ These are set inside Render's dashboard, not in a file that gets uploaded anywhe
 
 | Variable | What it is | Where it comes from |
 |---|---|---|
-| `GROQ_API_KEY` | Lets the backend talk to Groq, the AI Ozzy uses to understand chat messages | Your Groq account, API Keys page |
+| `OPENAI_API_KEY` | Lets the backend talk to OpenAI (model: gpt-4o-mini), the AI Ozzy uses to understand chat messages. This is a **paid** service — see CLAUDE.md Rule 1 for the deliberate decision behind that. | Your OpenAI account, API Keys page |
 | `DATABASE_URL` | The connection string for the production database | Copied from your Neon dashboard |
 | `SECRET_KEY` | A random secret used to keep login sessions secure | Any long random string — Render can generate one, or you can paste any long password-like text |
 | `ALGORITHM` | The technical method used to sign login sessions | Always `HS256` — leave as-is |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | How long someone stays logged in before needing to log in again | `10080` (that's 7 days) is a sensible default |
 | `FRONTEND_URL` | The live Vercel web address, so the backend knows to trust it | Fill this in *after* Vercel gives you the frontend's URL (see checklist below) |
 
-**No longer needed, removed from this guide:** `GEMINI_API_KEY` (the project uses Groq now, not Google Gemini) and the MTN/Airtel/Flutterwave payment keys (payments aren't built yet — these will come back once that feature exists).
+**No longer needed, removed from this guide:** `GEMINI_API_KEY` and `GROQ_API_KEY` (the project moved off Groq to OpenAI on 2026-08-30 — see CLAUDE.md). The MTN/Airtel/Flutterwave payment keys are still listed in the codebase's `.env` but aren't required for the app to run — mobile money/card checkout is built but not yet deployed anywhere.
 
 ## Keep-alive health check
 
@@ -43,7 +43,7 @@ https://your-app-name.onrender.com/health
 1. Go to render.com and create a free account.
 2. Create a new **Web Service** and connect your GitHub account, then select the `ozzyforbusiness` repository.
 3. When asked for environment variables, add all of these:
-   - `GROQ_API_KEY` — your real Groq key
+   - `OPENAI_API_KEY` — your real OpenAI key
    - `DATABASE_URL` — the connection string you copied from Neon
    - `SECRET_KEY` — any long random text
    - `ALGORITHM` — `HS256`

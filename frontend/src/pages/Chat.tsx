@@ -7,34 +7,16 @@ function Icon({ name, className = '' }: { name: string; className?: string }) {
   return <span className={`material-symbols-outlined ${className}`}>{name}</span>;
 }
 
-interface Draft { type: 'sale' | 'expense'; description: string; amount: number; quantity: number; category?: string; original: string; }
-
-type OnboardStepKey =
-  | 'owner_name' | 'business_name' | 'business_location'
-  | 'business_description' | 'years_in_business' | 'logo' | 'phone_confirm' | 'email'
-  | 'stock_items' | 'template_choice';
-
-const ONBOARD_STEPS: OnboardStepKey[] = [
-  'owner_name', 'business_name', 'business_location',
-  'business_description', 'years_in_business', 'logo', 'phone_confirm', 'email',
-  'stock_items', 'template_choice',
-];
-
-// The same three real templates offered on the Invoices page — kept in sync there.
-const ONBOARD_TEMPLATES = [
-  { label: 'Clean Minimal', value: 'clean_minimal' },
-  { label: 'Bold Branded', value: 'bold_branded' },
-  { label: 'Classic Ledger', value: 'classic_ledger' },
-];
+interface Draft { type: 'sale' | 'expense'; description: string; amount: number; quantity: number; category?: string; original: string; proposalId?: string; }
 
 interface Msg {
   id: string;
   role: 'ozzy' | 'user';
-  kind: 'text' | 'confirm' | 'recorded' | 'onboard-choice' | 'onboard-logo';
+  kind: 'text' | 'confirm' | 'recorded' | 'onboard-choice' | 'onboard-logo-upload';
   text?: string;
   draft?: Draft;
   choices?: { label: string; value: string }[];
-  stepKey?: OnboardStepKey;
+  field?: string; // which onboarding field a choice/upload message is about
 }
 
 const WELCOME_BACK_TEXT = "👋 Hi! I'm Ozzy, your business partner. Tell me what happened today, like \"Sold 3 sodas 6,000\" or \"Bought airtime 5,000\". You can also ask me things like \"What's my profit today?\"";
@@ -44,12 +26,12 @@ export default function Chat() {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [summary, setSummary] = useState<any>(null);
-  const [pending, setPending] = useState<Draft | null>(null);   // waiting for a missing amount
-
   const [profile, setProfile] = useState<any>(null);
-  const [onboardIndex, setOnboardIndex] = useState<number | null>(null); // null = not in onboarding
-  const [onboardAnswers, setOnboardAnswers] = useState<Record<string, string>>({});
-  const [awaitingFieldFor, setAwaitingFieldFor] = useState<'contact_phone' | 'email' | 'stock_items' | null>(null);
+
+  // Onboarding, state-based per Volume 3 §3.20 of the Brain doc: the backend owns what's known,
+  // what's missing, and what's next. The frontend just renders whatever it's told and forwards
+  // whatever the entrepreneur types or taps, it doesn't track a fixed question sequence itself.
+  const [onboarding, setOnboarding] = useState(false);
 
   const [scanning, setScanning] = useState(false);
   const [chips, setChips] = useState<string[]>(['Record a sale', 'Record an expense', 'Check stock']);
@@ -72,13 +54,10 @@ export default function Chat() {
   const cur = summary?.currency || 'UGX';
   const fmt = (n: number | string) => `${cur} ${Number(n || 0).toLocaleString()}`;
 
-  // Today's totals for the summary strip — owners only (Workers can't see profit/totals).
+  // Today's totals for the summary strip, owners only (Workers can't see profit/totals).
   // Cast to bypass client.ts's typed method list rather than widen a shared file mid-flight.
   const loadSummary = () => (api as any).request('/reports/dashboard?period=today').then(setSummary).catch(() => {});
   const push = (m: Omit<Msg, 'id'>) => setMessages(p => [...p, { ...m, id: Date.now() + '' + Math.random() }]);
-
-  // Saves one profile field immediately, as each onboarding answer comes in.
-  const patchMe = (data: Record<string, any>) => (api as any).updateMe(data);
 
   const uploadLogoFile = async (file: File) => {
     const token = localStorage.getItem('ozzy_access_token');
@@ -108,7 +87,7 @@ export default function Chat() {
     return res.json();
   };
 
-  // "today" / "yesterday" / weekday name / full date — whichever reads most naturally.
+  // "today" / "yesterday" / weekday name / full date, whichever reads most naturally.
   const describeDate = (isoDate: string): string => {
     const d = new Date(isoDate + 'T00:00:00');
     const today = new Date(); today.setHours(0, 0, 0, 0);
@@ -121,143 +100,60 @@ export default function Chat() {
 
   // ─── Onboarding conversation ────────────────────────────────────────────────
 
-  const onboardQuestion = (stepKey: OnboardStepKey, answers: Record<string, string>): string => {
-    const name = answers.owner_name || '';
-    const biz = answers.business_name || 'your business';
-    switch (stepKey) {
-      case 'owner_name':
-        return "👋 Hi! I'm Ozzy, your business partner. Before we dive in, let's get to know each other — what's your name?";
-      case 'business_name':
-        return `Thanks, ${name}! Let's get your business ready. What's your business called?`;
-      case 'business_location':
-        return `Nice! Where is ${biz} located?`;
-      case 'business_description':
-        return `And what does ${biz} do?`;
-      case 'years_in_business':
-        return `How long has ${biz} been running?`;
-      case 'logo':
-        return `Want to add your business logo? It'll show up on your invoices and receipts.`;
-      case 'phone_confirm':
-        return `Should customers reach you on the number you used to log in${profile?.phone_number ? ` (${profile.phone_number})` : ''}, or a different one?`;
-      case 'email':
-        return `Do you have an email to share, or shall we continue with just your phone?`;
-      case 'stock_items':
-        return `What products or stock does ${biz} currently have? You can list a few right now, or add them later in Inventory.`;
-      case 'template_choice':
-        return `Last thing — which style would you like for your invoices and receipts?`;
-      default:
-        return '';
-    }
-  };
-
-  const askOnboardStep = (index: number, answers: Record<string, string>) => {
-    if (index >= ONBOARD_STEPS.length) { finishOnboarding(answers); return; }
-    const stepKey = ONBOARD_STEPS[index];
-    const question = onboardQuestion(stepKey, answers);
-
-    if (stepKey === 'logo') {
-      push({ role: 'ozzy', kind: 'onboard-logo', text: question, stepKey });
-    } else if (stepKey === 'phone_confirm') {
-      push({
-        role: 'ozzy', kind: 'onboard-choice', text: question, stepKey,
-        choices: [{ label: 'Use this number', value: 'same' }, { label: 'Use a different one', value: 'different' }],
-      });
-    } else if (stepKey === 'email') {
-      push({
-        role: 'ozzy', kind: 'onboard-choice', text: question, stepKey,
-        choices: [{ label: 'Add an email', value: 'add' }, { label: 'Just my phone is fine', value: 'skip' }],
-      });
-    } else if (stepKey === 'stock_items') {
-      push({
-        role: 'ozzy', kind: 'onboard-choice', text: question, stepKey,
-        choices: [{ label: 'Type them in now', value: 'type_now' }, { label: "I'll add them later", value: 'later' }],
-      });
-    } else if (stepKey === 'template_choice') {
-      push({
-        role: 'ozzy', kind: 'onboard-choice', text: question, stepKey,
-        choices: ONBOARD_TEMPLATES.map(t => ({ label: t.label, value: t.value })),
-      });
+  const applyOnboardResult = (result: any) => {
+    if (result.kind === 'logo_upload') {
+      push({ role: 'ozzy', kind: 'onboard-logo-upload', text: result.reply, field: result.field });
+    } else if (result.choices && result.choices.length) {
+      push({ role: 'ozzy', kind: 'onboard-choice', text: result.reply, choices: result.choices, field: result.field });
     } else {
-      push({ role: 'ozzy', kind: 'text', text: question });
+      push({ role: 'ozzy', kind: 'text', text: result.reply });
     }
-    setOnboardIndex(index);
+    if (result.done) {
+      setOnboarding(false);
+      loadSummary();
+    }
   };
 
-  const finishOnboarding = async (answers: Record<string, string>) => {
-    try { await patchMe({ onboarding_completed: true }); } catch { /* not fatal — worst case they see onboarding again next login */ }
-    push({
-      role: 'ozzy', kind: 'text',
-      text: `🎉 All set, ${answers.owner_name || 'there'}! ${answers.business_name || 'Your business'} is ready to go. Tell me about your first sale or expense whenever you're ready — like "Sold 3 sodas 6,000".`,
-    });
-    setOnboardIndex(null);
-  };
-
-  const handleOnboardTextAnswer = async (text: string) => {
-    const stepKey = ONBOARD_STEPS[onboardIndex!];
-    const value = text.trim();
-    if (!value) { push({ role: 'ozzy', kind: 'text', text: 'Sorry, could you say that again?' }); return; }
-
+  const startOnboarding = async () => {
+    setOnboarding(true);
     setLoading(true);
-    const newAnswers = { ...onboardAnswers, [stepKey]: value };
-    setOnboardAnswers(newAnswers);
     try {
-      if (stepKey === 'years_in_business') {
-        const m = value.match(/\d+(\.\d+)?/);
-        let years = m ? Math.round(parseFloat(m[0])) : 0;
-        if (/month/i.test(value) && years < 1) years = 0; // "6 months" etc. — round down to 0 full years
-        await patchMe({ years_in_business: years });
-      } else {
-        const fieldMap: Partial<Record<OnboardStepKey, string>> = {
-          owner_name: 'owner_name', business_name: 'business_name',
-          business_location: 'business_location', business_description: 'business_description',
-        };
-        const field = fieldMap[stepKey];
-        if (field) await patchMe({ [field]: value });
-      }
-    } catch { /* don't block the conversation on a single save hiccup */ }
-    setLoading(false);
-    askOnboardStep(onboardIndex! + 1, newAnswers);
+      // §3.4: device/browser-local time decides the greeting, never asked for directly.
+      const localHour = new Date().getHours();
+      const result: any = await (api as any).request(`/chat/onboarding-start?local_hour=${localHour}`);
+      applyOnboardResult(result);
+    } catch {
+      push({ role: 'ozzy', kind: 'text', text: WELCOME_BACK_TEXT });
+      setOnboarding(false);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleOnboardMessage = async (text: string) => {
+    setLoading(true);
+    try {
+      const result: any = await (api as any).request('/chat/onboarding-message', { method: 'POST', body: JSON.stringify({ text }) });
+      applyOnboardResult(result);
+    } catch {
+      push({ role: 'ozzy', kind: 'text', text: 'Sorry, something went wrong. Could you try that again?' });
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleOnboardChoice = async (m: Msg, value: string) => {
     setMessages(p => p.filter(x => x.id !== m.id));
-    const stepKey = m.stepKey!;
-    const idx = onboardIndex!;
-
-    if (stepKey === 'phone_confirm') {
-      if (value === 'same') {
-        push({ role: 'user', kind: 'text', text: 'Use this number' });
-        askOnboardStep(idx + 1, onboardAnswers);
-      } else {
-        push({ role: 'user', kind: 'text', text: 'Use a different one' });
-        push({ role: 'ozzy', kind: 'text', text: 'What number should we use instead?' });
-        setAwaitingFieldFor('contact_phone');
-      }
-    } else if (stepKey === 'email') {
-      if (value === 'skip') {
-        push({ role: 'user', kind: 'text', text: 'Just my phone is fine' });
-        askOnboardStep(idx + 1, onboardAnswers);
-      } else {
-        push({ role: 'user', kind: 'text', text: 'Add an email' });
-        push({ role: 'ozzy', kind: 'text', text: "What's your email?" });
-        setAwaitingFieldFor('email');
-      }
-    } else if (stepKey === 'stock_items') {
-      if (value === 'later') {
-        push({ role: 'user', kind: 'text', text: "I'll add them later" });
-        askOnboardStep(idx + 1, onboardAnswers);
-      } else {
-        push({ role: 'user', kind: 'text', text: 'Type them in now' });
-        push({ role: 'ozzy', kind: 'text', text: 'Go ahead — list them separated by commas, like: dresses, shoes, bags.' });
-        setAwaitingFieldFor('stock_items');
-      }
-    } else if (stepKey === 'template_choice') {
-      const chosen = ONBOARD_TEMPLATES.find(t => t.value === value);
-      push({ role: 'user', kind: 'text', text: chosen?.label || value });
-      setLoading(true);
-      try { await patchMe({ receipt_template: value }); } catch { /* not fatal — they can change it later in Invoices */ }
+    const label = m.choices?.find(c => c.value === value)?.label || value;
+    push({ role: 'user', kind: 'text', text: label });
+    setLoading(true);
+    try {
+      const result: any = await (api as any).request('/chat/onboarding-choice', { method: 'POST', body: JSON.stringify({ field: m.field, value }) });
+      applyOnboardResult(result);
+    } catch {
+      push({ role: 'ozzy', kind: 'text', text: 'Sorry, something went wrong. Could you try that again?' });
+    } finally {
       setLoading(false);
-      askOnboardStep(idx + 1, onboardAnswers);
     }
   };
 
@@ -267,31 +163,26 @@ export default function Chat() {
     if (!file) return;
 
     if (!['image/png', 'image/jpeg', 'image/jpg', 'image/webp'].includes(file.type)) {
-      push({ role: 'ozzy', kind: 'text', text: 'That needs to be a PNG, JPEG, or WEBP photo. Want to try again, or use "Skip for now" above?' });
+      push({ role: 'ozzy', kind: 'text', text: 'That needs to be a PNG, JPEG, or WEBP photo. Want to try again?' });
       return;
     }
     if (file.size > 5 * 1024 * 1024) {
-      push({ role: 'ozzy', kind: 'text', text: 'That photo is a bit large — please choose one under 5MB, or use "Skip for now" above.' });
+      push({ role: 'ozzy', kind: 'text', text: 'That photo is a bit large, please choose one under 5MB.' });
       return;
     }
 
-    setMessages(p => p.filter(x => !(x.kind === 'onboard-logo')));
+    setMessages(p => p.filter(x => x.kind !== 'onboard-logo-upload'));
     push({ role: 'user', kind: 'text', text: `📷 ${file.name}` });
     setLoading(true);
     try {
       await uploadLogoFile(file);
-      push({ role: 'ozzy', kind: 'text', text: 'Got it — logo saved!' });
+      const result: any = await (api as any).request('/chat/onboarding-choice', { method: 'POST', body: JSON.stringify({ field: 'logo', value: 'uploaded' }) });
+      applyOnboardResult(result);
     } catch {
-      push({ role: 'ozzy', kind: 'text', text: "Hmm, that didn't upload. Let's move on for now — you can add it later in Settings." });
+      push({ role: 'ozzy', kind: 'text', text: "Hmm, that didn't upload. Let's move on for now, you can add it later in Settings." });
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
-    askOnboardStep(onboardIndex! + 1, onboardAnswers);
-  };
-
-  const skipLogo = (m: Msg) => {
-    setMessages(p => p.filter(x => x.id !== m.id));
-    push({ role: 'user', kind: 'text', text: 'Skip for now' });
-    askOnboardStep(onboardIndex! + 1, onboardAnswers);
   };
 
   const handleReceiptFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -300,11 +191,11 @@ export default function Chat() {
     if (!file) return;
 
     if (!['image/png', 'image/jpeg', 'image/jpg', 'image/webp'].includes(file.type)) {
-      push({ role: 'ozzy', kind: 'text', text: 'That needs to be a PNG, JPEG, or WEBP photo — could you try another one?' });
+      push({ role: 'ozzy', kind: 'text', text: 'That needs to be a PNG, JPEG, or WEBP photo, could you try another one?' });
       return;
     }
     if (file.size > 8 * 1024 * 1024) {
-      push({ role: 'ozzy', kind: 'text', text: 'That photo is a bit large — please use one under 8MB.' });
+      push({ role: 'ozzy', kind: 'text', text: 'That photo is a bit large, please use one under 8MB.' });
       return;
     }
 
@@ -360,7 +251,7 @@ export default function Chat() {
     .catch(() => push({ role: 'ozzy', kind: 'text', text: WELCOME_BACK_TEXT }));
 
   useEffect(() => {
-    // Guards against the greeting/onboarding being fetched and pushed twice — React 18's
+    // Guards against the greeting/onboarding being fetched and pushed twice, React 18's
     // StrictMode intentionally mounts, unmounts, and remounts this effect once in development,
     // which otherwise double-fires this one-time initial load.
     if (initializedRef.current) return;
@@ -370,7 +261,7 @@ export default function Chat() {
       setProfile(u);
       if (u?.role === 'owner') loadSummary(); // Workers can't see profit/totals, so skip it entirely for them.
       if (u?.role === 'owner' && !u?.onboarding_completed) {
-        askOnboardStep(0, {});
+        startOnboarding();
       } else {
         loadGreeting();
       }
@@ -390,8 +281,6 @@ export default function Chat() {
     if (silenceRafRef.current) cancelAnimationFrame(silenceRafRef.current);
   }, []);
 
-  const firstNumber = (t: string) => { const m = t.replace(/,/g, '').match(/\d+(\.\d+)?/); return m ? parseFloat(m[0]) : 0; };
-
   const showConfirm = (d: Draft) => push({ role: 'ozzy', kind: 'confirm', draft: d });
 
   // Shared by typed and voice messages: given the chat engine's { reply, action, draft }
@@ -401,13 +290,14 @@ export default function Chat() {
     if (res.action === 'confirm_sale' || res.action === 'confirm_expense') {
       const type: 'sale' | 'expense' = res.action === 'confirm_sale' ? 'sale' : 'expense';
       const d = res.draft || {};
-      showConfirm({ type, description: d.description || 'item', amount: parseFloat(d.amount) || 0, quantity: parseFloat(d.quantity) || 1, category: d.category, original: originalText });
+      showConfirm({ type, description: d.description || 'item', amount: parseFloat(d.amount) || 0, quantity: parseFloat(d.quantity) || 1, category: d.category, original: originalText, proposalId: res.proposal_id });
     } else if (res.action === 'need_amount') {
-      const d = res.draft || {};
-      setPending({ type: d.type === 'expense' ? 'expense' : 'sale', description: d.description || 'item', amount: 0, quantity: parseFloat(d.quantity) || 1, category: d.category, original: originalText });
+      // No local draft is kept, the backend has already stored this as a pending (if
+      // incomplete) proposal, so the next message goes straight back through /chat/process,
+      // which merges the amount into a fresh, real proposal server-side.
       push({ role: 'ozzy', kind: 'text', text: res.reply || `Got it. How much was it?` });
     } else {
-      push({ role: 'ozzy', kind: 'text', text: res.reply || `Sorry, I didn't quite catch that — could you rephrase?` });
+      push({ role: 'ozzy', kind: 'text', text: res.reply || `Sorry, I didn't quite catch that, could you rephrase?` });
     }
   };
 
@@ -417,49 +307,20 @@ export default function Chat() {
     push({ role: 'user', kind: 'text', text: msg });
     setInput('');
 
-    // Onboarding takes over the whole conversation until it's done.
-    if (onboardIndex !== null) {
-      if (awaitingFieldFor) {
-        const field = awaitingFieldFor;
-        setAwaitingFieldFor(null);
-        setLoading(true);
-        if (field === 'stock_items') {
-          const items = msg.split(/[,\n]/).map(s => s.trim()).filter(Boolean);
-          try { await Promise.all(items.map(name => api.createItem({ name }))); } catch { /* best-effort — Inventory still lets them fix this up */ }
-          setLoading(false);
-          push({
-            role: 'ozzy', kind: 'text',
-            text: items.length ? `Got it — added ${items.length} item${items.length !== 1 ? 's' : ''} to your inventory!` : `No problem — you can add stock anytime in Inventory.`,
-          });
-        } else {
-          try { await patchMe({ [field]: msg }); } catch { /* not fatal */ }
-          setLoading(false);
-        }
-        askOnboardStep(onboardIndex + 1, onboardAnswers);
-        return;
-      }
-      const stepKey = ONBOARD_STEPS[onboardIndex];
-      if (stepKey === 'logo' || stepKey === 'phone_confirm' || stepKey === 'email' || stepKey === 'stock_items' || stepKey === 'template_choice') {
-        push({ role: 'ozzy', kind: 'text', text: 'You can use the buttons above to answer that one 🙂' });
-        return;
-      }
-      await handleOnboardTextAnswer(msg);
+    // Onboarding takes over the whole conversation until it's done. A free-text reply while a
+    // choice/upload step is showing still gets sent, real interpretation decides whether it
+    // actually answers something rather than the UI just refusing to accept it.
+    if (onboarding) {
+      await handleOnboardMessage(msg);
       return;
     }
 
     setLoading(true);
     try {
-      // waiting for an amount from a previous message
-      if (pending) {
-        const amt = firstNumber(msg);
-        if (amt > 0) { const d = { ...pending, amount: amt, original: `${pending.original} ${msg}` }; setPending(null); showConfirm(d); }
-        else push({ role: 'ozzy', kind: 'text', text: `How much was it? Just type the amount, like 5,000.` });
-        return;
-      }
-
-      // The backend now runs real tool-calling (record_sale, record_expense, get_summary,
-      // get_inventory, create_invoice/receipt, list_low_stock) instead of a fixed classifier,
-      // so it decides for itself what to do and just tells us which UI action to show.
+      // The backend runs real tool-calling against the full Appendix A function catalog
+      // (propose_sale, propose_expense, get_report_summary, invoices, workers, ...) and the
+      // PROPOSE/COMMIT state machine, so every message, including a bare follow-up amount —
+      // goes straight through and it decides for itself what to do next.
       const res: any = await api.processChat(msg);
       applyChatResult(res, msg);
     } catch {
@@ -473,7 +334,16 @@ export default function Chat() {
     if (!m.draft) return;
     setMessages(p => p.filter(x => x.id !== m.id));
     try {
-      await api.createTransaction({ type: m.draft.type, amount: m.draft.amount, description: m.draft.description, quantity: m.draft.quantity, category: m.draft.category });
+      if (m.draft.proposalId) {
+        // Came from Ozzy's own proposal (typed sale/expense), goes through the real
+        // PROPOSE/COMMIT check server-side rather than trusting whatever's in this draft.
+        const res: any = await api.confirmChatProposal(m.draft.proposalId);
+        if (!res.ok) { push({ role: 'ozzy', kind: 'text', text: res.reply || `That confirmation has expired, please send it again.` }); return; }
+      } else {
+        // Came from a scanned receipt photo, not a chat proposal, there's nothing pending
+        // server-side to confirm against, so this records it directly.
+        await api.createTransaction({ type: m.draft.type, amount: m.draft.amount, description: m.draft.description, quantity: m.draft.quantity, category: m.draft.category });
+      }
       push({ role: 'ozzy', kind: 'recorded', draft: m.draft });
       if (profile?.role === 'owner') loadSummary();
     } catch { push({ role: 'ozzy', kind: 'text', text: `Couldn't save that. Please try again.` }); }
@@ -481,7 +351,7 @@ export default function Chat() {
   const confirmEdit = (m: Msg) => {
     setMessages(p => p.filter(x => x.id !== m.id));
     setInput(m.draft?.original || '');
-    push({ role: 'ozzy', kind: 'text', text: `Sure — I've put it back below. Fix it and send again.` });
+    push({ role: 'ozzy', kind: 'text', text: `Sure, I've put it back below. Fix it and send again.` });
     document.getElementById('chat-input')?.focus();
   };
 
@@ -496,7 +366,7 @@ export default function Chat() {
   };
 
   // Auto-stops the recording after a short pause in speech, so the user doesn't have to
-  // remember to tap again — but tapping the mic again still stops it immediately too.
+  // remember to tap again, but tapping the mic again still stops it immediately too.
   const watchForSilence = (stream: MediaStream) => {
     const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
     const audioCtx = new AudioCtx();
@@ -527,7 +397,7 @@ export default function Chat() {
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     } catch {
-      push({ role: 'ozzy', kind: 'text', text: "I need microphone access to hear you — please allow microphone permission for this site in your browser, then try again." });
+      push({ role: 'ozzy', kind: 'text', text: "I need microphone access to hear you, please allow microphone permission for this site in your browser, then try again." });
       return;
     }
 
@@ -541,7 +411,7 @@ export default function Chat() {
       setRecording(false);
       const blob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
       if (blob.size < 800) {
-        push({ role: 'ozzy', kind: 'text', text: "I didn't catch any audio there — please try recording again." });
+        push({ role: 'ozzy', kind: 'text', text: "I didn't catch any audio there, please try recording again." });
         return;
       }
       await sendVoice(blob);
@@ -590,7 +460,7 @@ export default function Chat() {
 
   return (
     <div className="h-screen flex flex-col relative overflow-hidden">
-      {/* Summary strip — owners only; Workers can't see profit/totals */}
+      {/* Summary strip, owners only; Workers can't see profit/totals */}
       {profile?.role !== 'worker' && (
         <div className="z-30 px-lg py-md md:px-margin-desktop">
           <button onClick={() => navigate('/reports')} className="mx-auto flex items-center justify-center gap-xl bg-surface-container-low hover:bg-surface-container hover:shadow-sm cursor-pointer transition-all rounded-full px-xl py-4 border border-outline-variant/40">
@@ -659,24 +529,21 @@ export default function Chat() {
                 </div>
               ) : m.kind === 'onboard-choice' && m.choices ? (
                 <div className="bg-surface-container-high text-on-surface p-lg rounded-2xl rounded-tl-none w-full max-w-[420px] shadow-sm">
-                  <p className="font-body-md text-body-md mb-md">{m.text}</p>
+                  <p className="font-body-md text-body-md mb-md whitespace-pre-line">{m.text}</p>
                   <div className="flex flex-col gap-sm">
                     {m.choices.map(c => (
                       <button key={c.value} onClick={() => handleOnboardChoice(m, c.value)} className="w-full py-3 bg-primary text-white font-bold rounded-xl hover:opacity-90 active:scale-95 transition-all">{c.label}</button>
                     ))}
                   </div>
                 </div>
-              ) : m.kind === 'onboard-logo' ? (
+              ) : m.kind === 'onboard-logo-upload' ? (
                 <div className="bg-surface-container-high text-on-surface p-lg rounded-2xl rounded-tl-none w-full max-w-[420px] shadow-sm">
-                  <p className="font-body-md text-body-md mb-md">{m.text}</p>
-                  <div className="flex gap-md">
-                    <button onClick={() => fileInputRef.current?.click()} className="flex-1 py-3 bg-primary text-white font-bold rounded-xl hover:opacity-90 active:scale-95 transition-all">Upload a photo</button>
-                    <button onClick={() => skipLogo(m)} className="px-5 py-3 border border-primary text-primary font-bold rounded-xl hover:bg-primary/5 active:scale-95 transition-all">Skip for now</button>
-                  </div>
+                  <p className="font-body-md text-body-md mb-md whitespace-pre-line">{m.text}</p>
+                  <button onClick={() => fileInputRef.current?.click()} className="w-full py-3 bg-primary text-white font-bold rounded-xl hover:opacity-90 active:scale-95 transition-all">Upload a photo</button>
                 </div>
               ) : (
                 <div className="bg-surface-container-high text-on-surface px-lg py-md rounded-2xl rounded-tl-none max-w-[85%] shadow-sm">
-                  <p className="font-body-md text-body-md">{m.text}</p>
+                  <p className="font-body-md text-body-md whitespace-pre-line">{m.text}</p>
                 </div>
               )}
             </div>
@@ -701,7 +568,7 @@ export default function Chat() {
       {/* Input */}
       <div className="absolute bottom-0 left-0 w-full p-lg md:px-margin-desktop bg-gradient-to-t from-surface via-surface to-transparent pt-xxl">
         <div className="max-w-2xl mx-auto">
-          {onboardIndex === null && (
+          {!onboarding && (
             <div className="flex gap-sm mb-md overflow-x-auto pb-2 no-scrollbar">
               {chips.map(label => (
                 <button key={label} onClick={() => runChip(label)} className="whitespace-nowrap px-lg py-2 bg-white border border-outline-variant rounded-full font-label-md text-label-md text-on-surface-variant hover:border-primary hover:text-primary transition-all shadow-sm">{label}</button>
@@ -719,15 +586,15 @@ export default function Chat() {
                   <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500" />
                 </span>
                 <span className="font-body-md text-body-md text-on-surface">
-                  Recording… {String(Math.floor(recordSeconds / 60)).padStart(1, '0')}:{String(recordSeconds % 60).padStart(2, '0')} — tap to stop
+                  Recording… {String(Math.floor(recordSeconds / 60)).padStart(1, '0')}:{String(recordSeconds % 60).padStart(2, '0')}, tap to stop
                 </span>
               </button>
             ) : (
               <>
                 <input id="chat-input" value={input} onChange={e => setInput(e.target.value)} onKeyDown={onKey} disabled={loading || transcribing}
                   className="w-full h-14 pl-lg pr-28 bg-white border border-outline-variant rounded-full text-body-md focus:ring-2 focus:ring-primary focus:border-transparent transition-all shadow-lg group-hover:shadow-xl outline-none"
-                  placeholder={onboardIndex !== null ? 'Type your answer…' : transcribing ? 'Listening to your recording…' : 'Type a message to Ozzy...'} type="text" />
-                {onboardIndex === null && (
+                  placeholder={onboarding ? 'Type your answer…' : transcribing ? 'Listening to your recording…' : 'Type a message to Ozzy...'} type="text" />
+                {!onboarding && (
                   <button onClick={toggleRecording} disabled={loading || transcribing} title="Record a voice message"
                     className="absolute right-14 w-10 h-10 text-on-surface-variant hover:text-primary rounded-full flex items-center justify-center hover:scale-105 active:scale-90 transition-all disabled:opacity-50">
                     <Icon name={transcribing ? 'hourglass_empty' : 'mic'} />

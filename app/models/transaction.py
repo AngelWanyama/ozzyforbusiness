@@ -16,7 +16,7 @@ class Transaction(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
-    business_id = Column(UUID(as_uuid=True), nullable=True, index=True)
+    business_id = Column(UUID(as_uuid=True), nullable=False, index=True)
     item_id = Column(UUID(as_uuid=True), ForeignKey("items.id"), nullable=True)
     type = Column(Enum(TransactionType), nullable=False)
     amount = Column(Numeric(precision=18, scale=2), nullable=False)

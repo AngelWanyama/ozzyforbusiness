@@ -26,6 +26,7 @@ async def initiate_mobile_money_payment(
     # 1. Create a pending payment record
     payment = Payment(
         user_id=current_user.id,
+        business_id=current_user.business_id or current_user.id,
         plan_type=payment_in.plan_type,
         amount=payment_in.amount,
         currency="UGX",
@@ -80,6 +81,7 @@ async def create_card_payment(
     
     payment = Payment(
         user_id=current_user.id,
+        business_id=current_user.business_id or current_user.id,
         plan_type=plan_type,
         amount=amount,
         currency="UGX",

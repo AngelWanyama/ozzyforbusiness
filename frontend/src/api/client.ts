@@ -89,6 +89,10 @@ class ApiClient {
     return this.request<any>('/chat/process', { method: 'POST', body: JSON.stringify({ text }) });
   }
 
+  async confirmChatProposal(proposalId: string) {
+    return this.request<any>('/chat/confirm', { method: 'POST', body: JSON.stringify({ proposal_id: proposalId }) });
+  }
+
   // === Reports ===
   async getReportSummary() {
     return this.request<any>('/reports/summary');
@@ -183,6 +187,13 @@ class ApiClient {
     const data = await res.json();
     if (!res.ok) throw new Error(data.detail || `Request failed: ${res.status}`);
     return data;
+  }
+
+  async changePassword(currentPassword: string, newPassword: string) {
+    return this.request<{ ok: boolean }>('/users/me/change-password', {
+      method: 'POST',
+      body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+    });
   }
 
   async getUserUsage() {

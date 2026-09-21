@@ -30,7 +30,8 @@ async def create_item(
 ):
     item = ItemModel(
         **item_in.model_dump(),
-        user_id=current_user.id
+        user_id=current_user.id,
+        business_id=current_user.business_id or current_user.id
     )
     db.add(item)
     await db.commit()
