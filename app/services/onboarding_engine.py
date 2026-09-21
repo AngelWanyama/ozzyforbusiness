@@ -126,6 +126,13 @@ def _is_known(state: Dict[str, Any], field: str) -> bool:
         return all(item.get("selling_price") is not None for item in known.get("stock_items", []))
     if field == "logo":
         return "logo_status" in known
+    if field == "business_description":
+        # A plain product/service list genuinely answers "what do you sell or what services do
+        # you offer" -- the model doesn't reliably classify a bare list as a "description" too
+        # (confirmed live: gpt-4o-mini regularly extracts products_mentioned alone for a message
+        # like "I sell shoes and bags"), so don't make the entrepreneur repeat themselves just
+        # because the model filed it under a different field name.
+        return bool(known.get("business_description")) or bool(known.get("products_mentioned"))
     return known.get(field) not in (None, "")
 
 
@@ -159,48 +166,115 @@ def question_for(field: str, state: Dict[str, Any], user: User) -> Dict[str, Any
     return {"kind": "text", "text": QUESTIONS[field]}
 
 
+# strict structured-outputs mode: every property listed in "properties" MUST appear in
+# "required" and every object (including nested ones) MUST set "additionalProperties": false.
+# A field that's genuinely optional is expressed via a nullable type (["string", "null"]), not
+# by leaving it out of "required" -- that's what makes strict mode different from a normal
+# schema. This is the fix for a real, confirmed failure mode: without "strict": True, a plain
+# OpenAI function-calling schema's "required" list is advisory only, and gpt-4o-mini was
+# regularly omitting the "response" key from its tool call entirely (not empty -- the key
+# genuinely absent from the JSON), silently falling back to a generic "Got it." with zero real
+# engagement. Strict mode makes the API itself guarantee the key exists on every single call.
 TOOLS = [{
     "type": "function",
     "function": {
         "name": "extract_onboarding_facts",
-        "description": "Pull out every onboarding fact present in the entrepreneur's message, however it's phrased, and write a short acknowledgment.",
+        "description": "Pull out every onboarding fact present in the entrepreneur's message, however it's phrased, and write Ozzy's genuine response to what they actually said.",
+        "strict": True,
         "parameters": {
             "type": "object",
+            "additionalProperties": False,
             "properties": {
-                "owner_name": {"type": "string", "description": "Just the name itself, e.g. 'My name is Angel' -> 'Angel'. Omit if not present."},
-                "business_name": {"type": "string", "description": "Omit if not present."},
-                "business_description": {"type": "string", "description": "A short description of what they sell/do, in their own words. Omit if not present."},
-                "products_mentioned": {"type": "array", "items": {"type": "string"}, "description": "Product or service names mentioned, e.g. ['dresses', 'shoes']. Omit if none."},
-                "is_service_business": {"type": "boolean", "description": "True if this is clearly a services business (no physical stock to track), false if clearly physical products, omit if unclear."},
-                "business_location": {"type": "string", "description": "Omit if not present."},
-                "employees_count": {"type": "number", "description": "How many employees, 0 if they say they have none. Omit if not mentioned."},
-                "email": {"type": "string", "description": "An email address, only if one was actually given."},
-                "email_declined": {"type": "boolean", "description": "True if they said they don't have one / want to skip."},
-                "stock_items": {
-                    "type": "array", "description": "Products currently in stock, with quantity and/or price if given.",
-                    "items": {"type": "object", "properties": {
-                        "name": {"type": "string"}, "quantity": {"type": "number"},
-                        "buying_price": {"type": "number"}, "selling_price": {"type": "number"},
-                    }, "required": ["name"]},
-                },
-                "stock_declined": {"type": "boolean", "description": "True if they said they'll add stock later / want to skip this."},
-                "off_topic": {"type": "boolean", "description": "True if this message doesn't answer or relate to onboarding at all (a question back to Ozzy, small talk, confusion)."},
-                "acknowledgment": {
+                "response": {
                     "type": "string",
                     "description": (
-                        "ONE short, warm sentence (or two) acknowledging what you understood, in Ozzy's "
-                        "own voice, e.g. \"It's lovely to meet you, Sarah.\" or \"I like that name.\" or "
-                        "\"Got it, dresses and shoes.\" If off_topic, respond briefly and genuinely to "
-                        "what they actually said instead. Do NOT ask a question here, that's handled "
-                        "separately. No em dashes. Never say 'bookkeeping' or 'accounting'. Never sound "
-                        "robotic, bureaucratic, clinical, condescending, or overly formal."
+                        "Write this FIRST, before working out any of the fields below. Ozzy's real "
+                        "response to this specific message, in Ozzy's own voice. This field is NEVER an "
+                        "empty string, no matter what the message says -- always write something real.\n"
+                        "- If you learned something new (a name, business name, products, etc.), acknowledge "
+                        "it naturally and warmly, e.g. \"It's lovely to meet you, Sarah.\" or \"I like that "
+                        "name.\" or \"Got it, dresses and shoes.\"\n"
+                        "- If the message hands you several facts at once, acknowledge the whole picture in "
+                        "one warm sentence, don't skip this just because there's a lot to acknowledge, e.g. "
+                        "\"Wonderful, Sarah! Sarah's Fashion in Kampala, got it.\"\n"
+                        "- If the message asks Ozzy a real question (e.g. \"what's my name\", \"why are you "
+                        "asking this\"), answer it directly and correctly using ONLY the known facts you were "
+                        "given below, never invent an answer.\n"
+                        "- If the message is a comment, complaint, refusal, or anything else that isn't an "
+                        "answer, respond to it genuinely and specifically, the way an attentive, warm, calm "
+                        "person actually would, not a deflection.\n"
+                        "- NEVER use generic customer-service filler. Banned, do not write anything like "
+                        "these: \"I'm sorry to hear that you're feeling this way\", \"I'm here to help with "
+                        "any questions you have\", \"How can I assist you\", \"I understand your concern\", "
+                        "\"I apologize for any inconvenience\". These are not Ozzy's voice.\n"
+                        "Do NOT ask the onboarding question here, that's handled separately and appended "
+                        "after your response. No em dashes. Never say 'bookkeeping' or 'accounting'. Never "
+                        "sound robotic, bureaucratic, clinical, condescending, or overly formal."
                     ),
                 },
+                "owner_name": {"type": ["string", "null"], "description": "Just the name itself, e.g. 'My name is Angel' -> 'Angel'. Fix obvious typos silently, don't comment on them. Null if not present in this message."},
+                "business_name": {"type": ["string", "null"], "description": "Null if not present in this message."},
+                "business_description": {"type": ["string", "null"], "description": "A short description of what they sell/do, in their own words, e.g. 'sells dresses and shoes'. Set this whenever the message says what the business sells or does, even if it's just a plain list of products or services (a product list IS a description). Null only if the message says nothing at all about what the business does."},
+                "products_mentioned": {"type": ["array", "null"], "items": {"type": "string"}, "description": "Product or service names mentioned, e.g. ['dresses', 'shoes']. Null if none."},
+                "is_service_business": {"type": ["boolean", "null"], "description": "True if this is clearly a services business (no physical stock to track), false if clearly physical products, null if unclear."},
+                "business_location": {"type": ["string", "null"], "description": "Null if not present in this message."},
+                "employees_count": {"type": ["number", "null"], "description": "How many employees, 0 if they say they have none. Null if not mentioned."},
+                "email": {"type": ["string", "null"], "description": "An email address, only if one was actually given, otherwise null."},
+                "email_declined": {"type": ["boolean", "null"], "description": "True if they said they don't have one / want to skip, otherwise null."},
+                "stock_items": {
+                    "type": ["array", "null"], "description": "Products currently in stock, with quantity and/or price if given. Null if none mentioned.",
+                    "items": {
+                        "type": "object", "additionalProperties": False,
+                        "properties": {
+                            "name": {"type": "string"},
+                            "quantity": {"type": ["number", "null"]},
+                            "buying_price": {"type": ["number", "null"]},
+                            "selling_price": {"type": ["number", "null"]},
+                        },
+                        "required": ["name", "quantity", "buying_price", "selling_price"],
+                    },
+                },
+                "stock_declined": {"type": ["boolean", "null"], "description": "True if they said they'll add stock later / want to skip this, otherwise null."},
+                "off_topic": {"type": ["boolean", "null"], "description": "True if this message doesn't answer or relate to the current onboarding question at all (a comment, a question back to Ozzy, small talk, a complaint, confusion). Set this whenever nothing above should be extracted from it."},
             },
-            "required": ["acknowledgment"],
+            "required": [
+                "response",
+                "owner_name", "business_name", "business_description", "products_mentioned",
+                "is_service_business", "business_location", "employees_count", "email",
+                "email_declined", "stock_items", "stock_declined", "off_topic",
+            ],
         },
     },
 }]
+
+# §3.5/§3.6/§3.13: exact scripted acknowledgments. Applied deterministically, not left to the
+# model, for the single most common case (one clean fact just given, nothing else going on) --
+# the same reliability lesson as everywhere else in this codebase: anything that MUST happen
+# every time is code, not a hope that the model remembers to say it.
+def _stock_ack(items: List[Dict[str, Any]]) -> str:
+    names = [i["name"] for i in items]
+    if len(names) == 1:
+        joined = names[0]
+    elif len(names) == 2:
+        joined = f"{names[0]} and {names[1]}"
+    else:
+        joined = ", ".join(names[:-1]) + f", and {names[-1]}"
+    return f"Got it. {joined}. \U0001F44D\U0001F3FD"
+
+
+SCRIPTED_ACK = {
+    "owner_name": lambda v: f"It's lovely to meet you, {v}. \U0001F60A",
+    "business_name": lambda v: "I like that name. \U0001F60A",
+}
+
+# Confirmed live (2026-09-21): even with strict structured outputs, gpt-4o-mini occasionally
+# still misses extracting a clean, unambiguous one-line answer into its matching field (e.g. the
+# model answers "Rinah Fashions" with a plain echo but leaves the business_name argument null).
+# When that happens the state machine correctly re-asks the same question forever, since nothing
+# was ever recorded as known. For these plain single-value text fields, a short, non-question,
+# not-flagged-off-topic reply is accepted as the literal answer to whatever was just asked,
+# rather than trusting model extraction alone for something this fundamental to get right.
+FALLBACK_ELIGIBLE_FIELDS = {"owner_name", "business_name", "business_location"}
 
 
 def _known_summary(state: Dict[str, Any]) -> str:
@@ -229,9 +303,16 @@ async def interpret_onboarding_message(user: User, state: Dict[str, Any], text: 
         "Plain, everyday language.\n\n"
         "You are getting to know a new business owner during onboarding, building understanding "
         "through conversation, not collecting registration data. Extract every fact the message "
-        f"actually contains, however it's phrased. What's already known: {_known_summary(state)}. "
-        f"You most recently asked about: {target or 'nothing specific'}. Never re-extract or "
-        "contradict something already known unless the entrepreneur is clearly correcting it."
+        f"actually contains, however it's phrased (fix obvious typos silently). What's already "
+        f"known: {_known_summary(state)}. You most recently asked about: {target or 'nothing '\
+        'specific'}. Never re-extract or contradict something already known unless the "
+        "entrepreneur is clearly correcting it.\n\n"
+        "Whatever the message actually is, even a question, a complaint, a refusal to answer, "
+        "or something with nothing to extract at all, you must genuinely engage with it in the "
+        "'response' field. Silently ignoring what someone said and only producing the next "
+        "question is never acceptable. If they ask you something answerable from the known "
+        "facts above, answer it correctly right there. If they're short with you or dismissive, "
+        "stay warm but actually respond to them as a person would, don't hide behind a script."
     )
     messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": text}]
     msg = ai_client.chat(messages, tools=TOOLS, tool_choice="required")
@@ -243,43 +324,99 @@ async def interpret_onboarding_message(user: User, state: Dict[str, Any], text: 
     except json.JSONDecodeError:
         args = {}
 
-    known = dict(state.get("known", {}))
+    old_known = state.get("known", {})
+    known = dict(old_known)
     declined = list(state.get("declined", []))
     is_service = state.get("is_service_business")
+    newly_filled: List[str] = []
 
-    if not args.get("off_topic"):
-        for field in ("owner_name", "business_name", "business_description", "business_location", "email"):
-            if args.get(field):
-                known[field] = args[field]
-        if args.get("products_mentioned"):
-            known["products_mentioned"] = args["products_mentioned"]
-        if args.get("employees_count") is not None:
-            known["employees_count"] = args["employees_count"]
-        if args.get("is_service_business") is not None:
-            is_service = args["is_service_business"]
-        if args.get("email_declined"):
-            declined.append("email")
-        if args.get("stock_declined"):
-            declined.append("stock_items")
-            declined.append("pricing")
-        if args.get("stock_items"):
-            existing = {i["name"].lower(): i for i in known.get("stock_items", [])}
-            for item in args["stock_items"]:
-                name_key = item["name"].lower()
-                merged = {**existing.get(name_key, {}), **{k: v for k, v in item.items() if v is not None}}
-                existing[name_key] = merged
+    # Deliberately NOT gated on `not args.get("off_topic")` -- confirmed live, gpt-4o-mini
+    # regularly sets off_topic true on the very same call where it also correctly extracts a
+    # real fact (e.g. a bare "Shoes" answer to "what's in stock" comes back with
+    # products_mentioned=["shoes"] AND off_topic=true). Every field below is already null-guarded
+    # by the model itself, so trust each one independently rather than discarding genuinely
+    # extracted data because of one unreliable, self-contradicting flag.
+    for field in ("owner_name", "business_name", "business_description", "business_location", "email"):
+        if args.get(field):
+            if not old_known.get(field):
+                newly_filled.append(field)
+            known[field] = args[field]
+    if args.get("products_mentioned"):
+        known["products_mentioned"] = args["products_mentioned"]
+    if args.get("employees_count") is not None:
+        known["employees_count"] = args["employees_count"]
+    if args.get("is_service_business") is not None:
+        is_service = args["is_service_business"]
+    if args.get("email_declined"):
+        declined.append("email")
+    if args.get("stock_declined"):
+        declined.append("stock_items")
+        declined.append("pricing")
+    if args.get("stock_items"):
+        if not old_known.get("stock_items"):
+            newly_filled.append("stock_items")
+        existing = {i["name"].lower(): i for i in known.get("stock_items", [])}
+        for item in args["stock_items"]:
+            name_key = item["name"].lower()
+            merged = {**existing.get(name_key, {}), **{k: v for k, v in item.items() if v is not None}}
+            existing[name_key] = merged
+        known["stock_items"] = list(existing.values())
+    elif args.get("products_mentioned") and not is_service:
+        # Confirmed live: a bare product-name answer to "what's in stock" (e.g. "Shoes") is
+        # consistently filed under products_mentioned, not stock_items. A product/service
+        # business's product list IS its stock list, so fold any new names in here too rather
+        # than leaving the stock question blocked on a field the model won't reliably populate
+        # for a plain one-word answer.
+        existing = {i["name"].lower(): i for i in known.get("stock_items", [])}
+        added_any = False
+        for name in args["products_mentioned"]:
+            key = name.lower()
+            if key not in existing:
+                existing[key] = {"name": name}
+                added_any = True
+        if added_any:
             known["stock_items"] = list(existing.values())
+            if not old_known.get("stock_items"):
+                newly_filled.append("stock_items")
+
+    # See FALLBACK_ELIGIBLE_FIELDS: extraction missed the pending field entirely, but this reads
+    # like a direct one-line answer, not a question or a comment -- take it as the answer.
+    if (
+        target in FALLBACK_ELIGIBLE_FIELDS
+        and not known.get(target)
+        and not args.get("off_topic")
+        and "?" not in text
+        and len(text.split()) <= 6
+    ):
+        known[target] = text.strip()
+        newly_filled.append(target)
 
     state = {"known": known, "declined": list(dict.fromkeys(declined)), "is_service_business": is_service}
-    acknowledgment = (args.get("acknowledgment") or "").strip()
+    response = (args.get("response") or "").strip()
+
+    # §3.5/§3.6/§3.13: when exactly one thing was learned this turn and it's one of the fields
+    # with an exact scripted acknowledgment, use that verbatim rather than trust the model to
+    # remember to say it (or say it right) every single time. A multi-fact message (several
+    # things volunteered at once) still gets the model's own combined acknowledgment, there's no
+    # single script for that combination.
+    if len(newly_filled) == 1:
+        field = newly_filled[0]
+        if field in SCRIPTED_ACK:
+            response = SCRIPTED_ACK[field](known[field])
+        elif field == "stock_items":
+            response = _stock_ack(known["stock_items"])
+    if not response:
+        # Should be rare given the prompt above, but never send a bare re-asked question with
+        # zero acknowledgment that anything was said at all.
+        response = "Got it."
 
     nxt = next_missing_field(state)
     if nxt is None:
-        reply = f"{acknowledgment}\n\n{completion_message(state)}" if acknowledgment else completion_message(state)
+        reply = f"{response}\n\n{completion_message(state)}"
         return {"state": state, "reply": reply, "done": True}
 
     q = question_for(nxt, state, user)
-    reply = f"{acknowledgment}\n\n{q['text']}" if acknowledgment else q["text"]
+    reply = f"{response}\n\n{q['text']}"
     return {"state": state, "reply": reply, "done": False, "next_field": nxt, "kind": q["kind"], "choices": q.get("choices")}
 
 
@@ -350,6 +487,11 @@ async def finalize_onboarding(db: AsyncSession, user: User, state: Dict[str, Any
         user.business_name = known["business_name"]
     if known.get("business_description"):
         user.business_description = known["business_description"]
+    elif known.get("products_mentioned"):
+        # See _is_known: a bare product list satisfies the onboarding question even when the
+        # model never separately fills business_description, so synthesize one here rather than
+        # leaving the profile field blank.
+        user.business_description = "Sells " + ", ".join(known["products_mentioned"])
     if known.get("business_location"):
         user.business_location = known["business_location"]
     if known.get("email"):

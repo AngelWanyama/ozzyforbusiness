@@ -1,11 +1,9 @@
 """
 Standalone test script for Ozzy's conversational interpretation, covering every flow that
-sends a user message to the model for real understanding (see the investigation in the
-2026 chat log for the full map): onboarding, and the main chat/sales flow.
+sends a user message to the model for real understanding: onboarding (Volume 3, §3.1-§3.23),
+and the main chat/sales flow.
 
-For each flow this runs: a plain direct answer, a correction after a wrong extraction, an
-off-topic/unclear message, and an ambiguous answer. Run with a real OPENAI_API_KEY configured
-in .env:
+Run with a real OPENAI_API_KEY configured in .env:
 
     venv\\Scripts\\activate
     python test_conversation_flows.py
@@ -13,11 +11,22 @@ in .env:
 It talks to the FastAPI app in-process (no server needs to be running) and prints what Ozzy
 actually did for each case, plus a PASS/FAIL judgment against what should have happened. It
 creates and then deletes its own throwaway test users, it does not touch real data.
+
+The onboarding section below is the permanent regression suite for the 2026-09-21 tone and
+comprehension bug: Ozzy silently re-asking the scripted question instead of genuinely engaging
+with off-script input (a question back to Ozzy, a rude remark, a refusal to continue), and
+missing the exact §3.5/§3.6/§3.13 acknowledgments. Every case from that bug report has its own
+test here so a regression is caught automatically, not just by someone happening to try the
+same three sentences again by hand.
 """
 import asyncio
 import sys
 
 import httpx
+
+# Windows' console defaults to cp1252, which can't print the emoji in Ozzy's real replies --
+# without this the test run crashes on the first printed reply instead of on an actual failure.
+sys.stdout.reconfigure(encoding="utf-8")
 
 sys.path.insert(0, ".")
 from app.main import app  # noqa: E402
@@ -26,11 +35,26 @@ PASS = "PASS"
 FAIL = "FAIL"
 results = []
 
+# Exact generic AI-assistant filler the 2026-09-21 bug report caught Ozzy using. None of this is
+# in the Brain doc anywhere and none of it may ever appear in an onboarding reply again.
+BANNED_PHRASES = [
+    "sorry to hear that you're feeling this way",
+    "i'm here to help with any questions",
+    "how can i assist",
+    "i understand your concern",
+    "i apologize for any inconvenience",
+]
+
 
 def check(label, condition, detail=""):
     status = PASS if condition else FAIL
     results.append((label, status))
     print(f"[{status}] {label}" + (f" -- {detail}" if detail else ""))
+
+
+def has_banned_phrase(text):
+    low = (text or "").lower()
+    return any(p in low for p in BANNED_PHRASES)
 
 
 async def register(client, phone):
@@ -53,49 +77,166 @@ async def cleanup(phone):
     con.close()
 
 
-async def test_onboarding(client, headers):
-    print("\n=== ONBOARDING: owner_name step ===")
+async def new_onboarding_user(client, phone):
+    """Fresh user, onboarding started, ready for the first free-text turn."""
+    await cleanup(phone)
+    token = await register(client, phone)
+    headers = {"Authorization": f"Bearer {token}"}
+    await client.get("/api/v1/chat/onboarding-start", headers=headers)
+    return headers
 
-    # 1. Plain direct answer
-    r = await client.post("/api/v1/chat/onboarding-reply", json={
-        "field": "owner_name", "question": "What's your name?", "text": "My name is Angel",
-    }, headers=headers)
-    d = r.json()
-    print("  reply:", d)
-    check("onboarding: plain answer extracts just the name", d["intent"] == "answer" and d.get("value", "").strip().lower() == "angel", d.get("value"))
 
-    # 2. Correction after a wrong extraction (simulate the wrong extraction first)
-    r = await client.post("/api/v1/chat/onboarding-reply", json={
-        "field": "business_name", "question": "What's your business called?", "text": "No, my name is Angel, not Angelaa",
-        "prior_field": "owner_name", "prior_question": "What's your name?", "prior_value": "Angelaa",
-    }, headers=headers)
-    d = r.json()
-    print("  reply:", d)
+async def send_msg(client, headers, text):
+    r = await client.post("/api/v1/chat/onboarding-message", json={"text": text}, headers=headers)
+    return r.json()
+
+
+async def send_choice(client, headers, field, value):
+    r = await client.post("/api/v1/chat/onboarding-choice", json={"field": field, "value": value}, headers=headers)
+    return r.json()
+
+
+async def test_single_word_name(client):
+    print("\n=== ONBOARDING: name given alone, one word only ===")
+    phone = "+256700000901"
+    headers = await new_onboarding_user(client, phone)
+    d = await send_msg(client, headers, "Angel")
+    print("  reply:", d["reply"])
+    reply = d["reply"]
+    check("single-word name gets the exact §3.5 acknowledgment", "lovely to meet you" in reply.lower() and "angel" in reply.lower(), reply)
+    check("single-word name still advances to the business-name question", "name of your business" in reply.lower(), reply)
+    await cleanup(phone)
+
+
+async def test_name_typo(client):
+    print("\n=== ONBOARDING: name given with a typo ===")
+    phone = "+256700000902"
+    headers = await new_onboarding_user(client, phone)
+    d = await send_msg(client, headers, "my nmae is Angeal")
+    print("  reply:", d["reply"])
+    reply = d["reply"]
     check(
-        "onboarding: correction to the previous answer is attributed to the previous field, not the current one",
-        d["intent"] == "correction" and d.get("applies_to") == "previous",
-        d,
+        "typo'd name is understood and acknowledged warmly, with no comment on the mistake",
+        "lovely to meet you" in reply.lower() and "typo" not in reply.lower() and "spelling" not in reply.lower() and "mean" not in reply.lower(),
+        reply,
     )
+    check("typo'd name still advances to the business-name question", "name of your business" in reply.lower(), reply)
+    await cleanup(phone)
 
-    # 3. Off-topic / unclear
-    r = await client.post("/api/v1/chat/onboarding-reply", json={
-        "field": "owner_name", "question": "What's your name?", "text": "are you okay",
-    }, headers=headers)
-    d = r.json()
-    print("  reply:", d)
-    check("onboarding: off-topic remark is recognized, not saved as an answer", d["intent"] == "off_topic", d)
 
-    # 4. Ambiguous answer (vague, no real number given)
-    r = await client.post("/api/v1/chat/onboarding-reply", json={
-        "field": "years_in_business", "question": "How long has your business been running?", "text": "not that long",
-    }, headers=headers)
-    d = r.json()
-    print("  reply:", d)
-    check(
-        "onboarding: vague/ambiguous answer doesn't get treated as a confident number",
-        d["intent"] != "answer" or not (d.get("value") or "").strip().replace(".", "").isdigit() or d.get("value") in ("0",),
-        d,
-    )
+async def test_direct_question_to_ozzy(client):
+    print("\n=== ONBOARDING: a direct question aimed at Ozzy mid-onboarding ===")
+    phone = "+256700000903"
+    headers = await new_onboarding_user(client, phone)
+    d1 = await send_msg(client, headers, "Angel")
+    print("  reply 1:", d1["reply"])
+    d2 = await send_msg(client, headers, "Wait, before that -- what's my name, if you remember it?")
+    print("  reply 2:", d2["reply"])
+    reply = d2["reply"]
+    check("a real question aimed at Ozzy is answered correctly from known facts", "angel" in reply.lower(), reply)
+    check("no generic AI-assistant filler in the answer", not has_banned_phrase(reply), reply)
+    check("Ozzy still returns to the pending business-name question afterward", "name of your business" in reply.lower(), reply)
+    await cleanup(phone)
+
+
+async def test_rude_reply(client):
+    print("\n=== ONBOARDING: a rude / dismissive reply ===")
+    phone = "+256700000904"
+    headers = await new_onboarding_user(client, phone)
+    d1 = await send_msg(client, headers, "Angel")
+    print("  reply 1:", d1["reply"])
+    d2 = await send_msg(client, headers, "You are rude.")
+    print("  reply 2:", d2["reply"])
+    reply = d2["reply"]
+    check("no generic AI-assistant filler (\"sorry to hear that you're feeling this way\" etc.)", not has_banned_phrase(reply), reply)
+    check("response line before the question is non-empty (genuinely engaged, not silent)", bool(reply.split("\n\n")[0].strip()), reply)
+    check("still returns to the pending business-name question", "name of your business" in reply.lower(), reply)
+    await cleanup(phone)
+
+
+async def test_refuses_to_continue(client):
+    print("\n=== ONBOARDING: refuses to continue until Ozzy answers something first ===")
+    phone = "+256700000905"
+    headers = await new_onboarding_user(client, phone)
+    d1 = await send_msg(client, headers, "Angel")
+    print("  reply 1:", d1["reply"])
+    d2 = await send_msg(client, headers, "Answer my question first.")
+    print("  reply 2:", d2["reply"])
+    reply = d2["reply"]
+    check("no generic AI-assistant filler (\"I'm here to help with any questions you have\" etc.)", not has_banned_phrase(reply), reply)
+    check("response line before the question is non-empty (genuinely engaged, not silent)", bool(reply.split("\n\n")[0].strip()), reply)
+    check("still returns to the pending business-name question", "name of your business" in reply.lower(), reply)
+    await cleanup(phone)
+
+
+async def test_all_info_at_once(client):
+    print("\n=== ONBOARDING: all info given at once (the Sarah case, §3.20) ===")
+    phone = "+256700000906"
+    headers = await new_onboarding_user(client, phone)
+    d = await send_msg(client, headers, "Hi, I'm Sarah. I run Sarah's Fashion in Kampala. I sell dresses and shoes. I have three employees.")
+    print("  reply:", d, "\n  field/kind:", d.get("field"), d.get("kind"))
+    reply = d["reply"].lower()
+    check("does not re-ask for the owner's name", "what should i call you" not in reply, reply)
+    check("does not re-ask for the business name", "name of your business" not in reply, reply)
+    check("does not re-ask for the location", "where is your business located" not in reply, reply)
+    check("does not re-ask about employees", "any employees" not in reply, reply)
+    await cleanup(phone)
+
+
+async def test_full_flow_scripted_acks(client):
+    """Walks a full onboarding conversation end to end, confirming every exact §3.5/§3.6/§3.13
+    scripted acknowledgment fires on its own single-fact turn, and that the whole state machine
+    actually reaches completion."""
+    print("\n=== ONBOARDING: full flow, each scripted acknowledgment individually ===")
+    phone = "+256700000907"
+    headers = await new_onboarding_user(client, phone)
+
+    d = await send_msg(client, headers, "Angel")
+    print("  owner_name reply:", d["reply"])
+    check("§3.5 owner_name acknowledgment fires exactly", "it's lovely to meet you, angel" in d["reply"].lower(), d["reply"])
+
+    d = await send_msg(client, headers, "Rinah Fashions")
+    print("  business_name reply:", d["reply"])
+    check("§3.6 business_name acknowledgment fires exactly", "i like that name" in d["reply"].lower(), d["reply"])
+
+    # Deliberately no product names here (vs. "I sell shoes and bags") -- naming products this
+    # early also seeds the stock list (a product-list answer legitimately satisfies both "what do
+    # you sell" and "what's in stock", see onboarding_engine._is_known), which would make the
+    # dedicated stock_items question below get skipped as already-answered. Keeping it vague here
+    # is what lets that question fire fresh, so its own single-item scripted ack can be tested in
+    # isolation.
+    d = await send_msg(client, headers, "I run a small boutique")
+    print("  business_description reply:", d["reply"])
+    check("business_description turn produces a genuine, non-empty response", bool(d["reply"].split("\n\n")[0].strip()), d["reply"])
+
+    d = await send_msg(client, headers, "Kampala")
+    print("  business_location reply:", d["reply"])
+    check("moves on after location is given", "where is your business located" not in d["reply"].lower(), d["reply"])
+
+    # phone_confirm is a deterministic choice step, no model call.
+    d = await send_choice(client, headers, "phone_confirm", "same")
+    print("  phone_confirm reply:", d["reply"])
+
+    d = await send_msg(client, headers, "I don't have one yet, that's fine")
+    print("  email reply:", d["reply"])
+
+    # logo is also a deterministic choice step.
+    d = await send_choice(client, headers, "logo", "none")
+    print("  logo reply:", d["reply"])
+    check("logo decline gets the exact §3.11 text", "you don't need one to get started" in d["reply"].lower(), d["reply"])
+
+    d = await send_msg(client, headers, "No employees yet, just me")
+    print("  employees reply:", d["reply"])
+
+    d = await send_msg(client, headers, "Shoes")
+    print("  stock_items reply:", d["reply"])
+    check("§3.13 stock acknowledgment fires exactly for a single item", "got it. shoes." in d["reply"].lower(), d["reply"])
+
+    d = await send_msg(client, headers, "I buy them at 20000 and sell at 30000")
+    print("  pricing / completion reply:", d["reply"])
+    check("full onboarding conversation reaches completion", d.get("done") is True, d)
+
+    await cleanup(phone)
 
 
 async def test_chat_sales(client, headers):
@@ -146,15 +287,20 @@ async def test_chat_sales(client, headers):
 async def main():
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        await test_single_word_name(client)
+        await test_name_typo(client)
+        await test_direct_question_to_ozzy(client)
+        await test_rude_reply(client)
+        await test_refuses_to_continue(client)
+        await test_all_info_at_once(client)
+        await test_full_flow_scripted_acks(client)
+
         phone = "+256700000999"
         await cleanup(phone)
         token = await register(client, phone)
         headers = {"Authorization": f"Bearer {token}"}
         await client.patch("/api/v1/users/me", json={"business_name": "Test Co", "currency": "UGX"}, headers=headers)
-
-        await test_onboarding(client, headers)
         await test_chat_sales(client, headers)
-
         await cleanup(phone)
 
     print("\n=== SUMMARY ===")
