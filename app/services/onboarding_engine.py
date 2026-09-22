@@ -18,6 +18,7 @@ Design split, deliberately:
 """
 import json
 import logging
+import re
 import uuid
 from datetime import datetime
 from decimal import Decimal
@@ -236,11 +237,13 @@ TOOLS = [{
                 },
                 "stock_declined": {"type": ["boolean", "null"], "description": "True if they said they'll add stock later / want to skip this, otherwise null."},
                 "off_topic": {"type": ["boolean", "null"], "description": "True if this message doesn't answer or relate to the current onboarding question at all (a comment, a question back to Ozzy, small talk, a complaint, confusion). Set this whenever nothing above should be extracted from it."},
+                "sale_or_expense_mentioned": {"type": ["boolean", "null"], "description": "True if the message describes something that ALREADY HAPPENED -- an actual sale made or money spent, e.g. 'Sold shoes at 50,000, one pair' or 'Paid 10,000 for transport'. This is NOT the same as describing what the business generally sells (e.g. 'I sell shoes' is business_description, not this). Onboarding cannot record transactions yet, so setting this true suppresses your own response text in favor of an honest one. Null/false otherwise."},
             },
             "required": [
                 "response",
                 "owner_name", "business_name", "business_description", "products_mentioned",
                 "is_service_business", "business_location", "employees_count", "email",
+                "sale_or_expense_mentioned",
                 "email_declined", "stock_items", "stock_declined", "off_topic",
             ],
         },
@@ -267,14 +270,85 @@ SCRIPTED_ACK = {
     "business_name": lambda v: "I like that name. \U0001F60A",
 }
 
-# Confirmed live (2026-09-21): even with strict structured outputs, gpt-4o-mini occasionally
-# still misses extracting a clean, unambiguous one-line answer into its matching field (e.g. the
-# model answers "Rinah Fashions" with a plain echo but leaves the business_name argument null).
-# When that happens the state machine correctly re-asks the same question forever, since nothing
-# was ever recorded as known. For these plain single-value text fields, a short, non-question,
+# Confirmed live (2026-09-21, and again 2026-09-22 for business_description via "I run a small
+# boutique"): even with strict structured outputs, gpt-4o-mini occasionally still misses
+# extracting a clean, unambiguous one-line answer into its matching field (e.g. the model
+# answers "Rinah Fashions" with a plain echo but leaves the business_name argument null). When
+# that happens the state machine correctly re-asks the same question forever, since nothing was
+# ever recorded as known. For these plain single-value text fields, a short, non-question,
 # not-flagged-off-topic reply is accepted as the literal answer to whatever was just asked,
 # rather than trusting model extraction alone for something this fundamental to get right.
-FALLBACK_ELIGIBLE_FIELDS = {"owner_name", "business_name", "business_location"}
+# business_description gets a longer allowance since a genuine description runs longer than a
+# name or a place ("I sell homemade cakes and pastries for special occasions" is a real answer,
+# not a comment).
+FALLBACK_MAX_WORDS = {"owner_name": 4, "business_name": 6, "business_location": 6, "business_description": 16}
+FALLBACK_ELIGIBLE_FIELDS = set(FALLBACK_MAX_WORDS)
+
+# Confirmed live (2026-09-22): this fallback has a real failure mode of its own -- "You are
+# rude." (3 words, no "?", and the model occasionally fails to flag it off_topic) got accepted
+# as a literal business_name once, producing "I like that name. :)" in response to an insult. A
+# genuine name/place/description never addresses Ozzy in the second person, so this is a cheap,
+# safe guard against exactly that kind of remark slipping through the word-count/question-mark
+# check alone.
+_SECOND_PERSON_RE = re.compile(r"\byou\b|\byour\b|\byou're\b|\byou'll\b|\byou've\b", re.IGNORECASE)
+
+# Confirmed live (2026-09-22): a plain "No" / "Not right now" / "Not yet" answer to the
+# employees question is consistently marked off_topic=true with nothing extracted at all --
+# gpt-4o-mini doesn't reliably map a short decline to employees_count=0. Rather than add
+# another unreliable extracted boolean, this matches the decline directly against the raw
+# text, deterministically, per §3.12 ("If no ... Ozzy continues naturally", i.e. must not
+# repeat the question).
+_EMPLOYEES_DECLINE_RE = re.compile(
+    r"^\s*(no+|nope|nah|none|not\s+(right\s+)?now|not\s+yet|no\s+employees?)\b", re.IGNORECASE
+)
+
+# Confirmed live (2026-09-22): email_declined is usually extracted correctly (a "just my phone
+# is fine" answer got email_declined=true 8/8 times tested in isolation), but a single live
+# end-to-end run still hit the same intermittent miss as employees -- the model's own response
+# text even acknowledged the decline while the structured field stayed unset, so onboarding
+# re-asked the same email question right after appearing to accept the answer. Same fix as
+# employees: a direct, deterministic match on top of (not instead of) the model's own
+# extraction, since even an occasional miss here is a real dead end for the user.
+_EMAIL_DECLINE_RE = re.compile(
+    r"^\s*(no+|nope|nah|none|skip|not\s+(right\s+)?now|not\s+yet|"
+    r"(just|only)\s+(my\s+)?(phone|number)|i\s+don'?t\s+have\s+(one|an?\s+email))\b",
+    re.IGNORECASE,
+)
+
+# Confirmed live (2026-09-22): "I buy them at 10000 and sell at 20000" -- a completely normal
+# answer to the pricing question -- failed to extract into stock_items about 1 in 6 tries even
+# after naming the specific pending item in the prompt (see target_label in
+# interpret_onboarding_message), because the strict schema requires a "name" per stock item and
+# a bare "them" gives the model nothing to anchor it to on an off turn. A plain two-number
+# answer to "how much do you buy/sell X for" has exactly one sane reading -- buy price, then
+# sell price, in that order -- so this is deterministic rather than leaving the last onboarding
+# question able to block completion forever.
+_TWO_NUMBERS_RE = re.compile(r"[\d][\d,]*(?:\.\d+)?")
+
+
+def _extract_two_numbers(text: str) -> Optional[tuple]:
+    nums = [float(n.replace(",", "")) for n in _TWO_NUMBERS_RE.findall(text)]
+    if len(nums) == 2:
+        return nums[0], nums[1]
+    return None
+
+# Confirmed live (2026-09-22): a message describing a completed sale/expense sent mid-onboarding
+# ("Sold shoes at 50,000 ugx, one pair") gets a warm-sounding conversational acknowledgment from
+# the model ("Got it, a pair of shoes sold for 50,000 UGX") with NOTHING actually written to the
+# transactions table -- onboarding has no integration with the real PROPOSE/COMMIT sale flow at
+# all. That phrasing is a false confirmation: it implies money was recorded when nothing was.
+# Per the Brain doc, Ozzy must never state something as done unless it actually is, so this
+# field lets the model flag the case and a deterministic, honest reply replaces whatever the
+# model would otherwise have said, rather than trusting free text not to imply completion.
+
+
+def _pending_pricing_item_name(state: Dict[str, Any]) -> Optional[str]:
+    """Same lookup question_for's pricing branch uses -- which stock item is still missing a
+    selling price. Shared so the model can be told explicitly what a bare "them"/"it" answer to
+    the pricing question refers to (see target_label in interpret_onboarding_message)."""
+    known = state.get("known", {})
+    item = next((i for i in known.get("stock_items", []) if i.get("selling_price") is None), None)
+    return item["name"] if item else None
 
 
 def _known_summary(state: Dict[str, Any]) -> str:
@@ -295,6 +369,15 @@ async def interpret_onboarding_message(user: User, state: Dict[str, Any], text: 
         return {"state": state, "reply": "Sorry, I can't understand messages right now, the AI service isn't configured. Please try again shortly.", "done": False}
 
     target = next_missing_field(state)
+    target_label = target or "nothing specific"
+    if target == "pricing":
+        # Confirmed live (2026-09-22): without this, "I buy them at 10000 and sell at 20000"
+        # failed to extract into stock_items at all -- the schema requires a "name" per item, and
+        # a bare "them"/"it" answer gives the model nothing to fill it with, so it produced
+        # nothing rather than guess. Naming the specific pending item removes the ambiguity.
+        pending_item = _pending_pricing_item_name(state)
+        if pending_item:
+            target_label = f"the buying and selling price for '{pending_item}' -- if they answer with just numbers, or say 'them'/'it', they mean the price of '{pending_item}'"
     system_prompt = (
         "IDENTITY: You are Ozzy, warm, friendly, calm, patient, encouraging, respectful, helpful, "
         "human, non-judgmental. Never robotic, bureaucratic, clinical, condescending, overly "
@@ -304,8 +387,8 @@ async def interpret_onboarding_message(user: User, state: Dict[str, Any], text: 
         "You are getting to know a new business owner during onboarding, building understanding "
         "through conversation, not collecting registration data. Extract every fact the message "
         f"actually contains, however it's phrased (fix obvious typos silently). What's already "
-        f"known: {_known_summary(state)}. You most recently asked about: {target or 'nothing '\
-        'specific'}. Never re-extract or contradict something already known unless the "
+        f"known: {_known_summary(state)}. You most recently asked about: {target_label}. Never "
+        "re-extract or contradict something already known unless the "
         "entrepreneur is clearly correcting it.\n\n"
         "Whatever the message actually is, even a question, a complaint, a refusal to answer, "
         "or something with nothing to extract at all, you must genuinely engage with it in the "
@@ -358,7 +441,8 @@ async def interpret_onboarding_message(user: User, state: Dict[str, Any], text: 
         known["employees_count"] = args["employees_count"]
     if args.get("is_service_business") is not None:
         is_service = args["is_service_business"]
-    if args.get("email_declined"):
+    email_declined_by_model = bool(args.get("email_declined"))
+    if email_declined_by_model:
         declined.append("email")
     if args.get("stock_declined"):
         declined.append("stock_items")
@@ -397,10 +481,39 @@ async def interpret_onboarding_message(user: User, state: Dict[str, Any], text: 
         and not known.get(target)
         and not args.get("off_topic")
         and "?" not in text
-        and len(text.split()) <= 6
+        and len(text.split()) <= FALLBACK_MAX_WORDS[target]
+        and not _SECOND_PERSON_RE.search(text)
     ):
         known[target] = text.strip()
         newly_filled.append(target)
+
+    # See _TWO_NUMBERS_RE: extraction missed the pending item's price entirely, but the message
+    # has exactly two numbers in it -- take them as buy price then sell price, in that order.
+    if target == "pricing":
+        pending_item = _pending_pricing_item_name({"known": known})
+        if pending_item:
+            item_entry = next((i for i in known.get("stock_items", []) if i["name"] == pending_item), None)
+            if item_entry and item_entry.get("selling_price") is None:
+                nums = _extract_two_numbers(text)
+                if nums:
+                    item_entry["buying_price"], item_entry["selling_price"] = nums
+
+    # See _EMPLOYEES_DECLINE_RE: a plain "No" / "Not right now" to the employees question isn't
+    # reliably turned into employees_count=0 by the model, so match it directly here instead.
+    employees_declined_via_regex = (
+        target == "employees" and "employees_count" not in known and bool(_EMPLOYEES_DECLINE_RE.match(text))
+    )
+    if employees_declined_via_regex:
+        known["employees_count"] = 0
+
+    # See _EMAIL_DECLINE_RE.
+    email_declined_via_regex = (
+        not email_declined_by_model and target == "email" and "email" not in declined
+        and not known.get("email") and bool(_EMAIL_DECLINE_RE.match(text))
+    )
+    if email_declined_via_regex:
+        declined.append("email")
+    email_declined_this_turn = email_declined_by_model or email_declined_via_regex
 
     state = {"known": known, "declined": list(dict.fromkeys(declined)), "is_service_business": is_service}
     response = (args.get("response") or "").strip()
@@ -416,6 +529,30 @@ async def interpret_onboarding_message(user: User, state: Dict[str, Any], text: 
             response = SCRIPTED_ACK[field](known[field])
         elif field == "stock_items":
             response = _stock_ack(known["stock_items"])
+
+    # §3.12's exact decline wording -- was already defined as EMPLOYEES_NO_REPLY but never
+    # actually wired in anywhere, so the model's own (inconsistent) phrasing was used instead.
+    if employees_declined_via_regex:
+        response = EMPLOYEES_NO_REPLY
+
+    # §3.10's exact decline wording -- same situation as EMPLOYEES_NO_REPLY, was defined but
+    # never wired in. Applied whenever email gets declined this turn, whether the model itself
+    # caught it or the regex fallback did, so the Brain doc's exact wording always wins over
+    # whatever the model would have improvised.
+    if email_declined_this_turn:
+        response = EMAIL_DECLINE_REPLY
+
+    # See sale_or_expense_mentioned in TOOLS: overrides anything above, deliberately. Onboarding
+    # has no path to actually record a transaction, so the reply must never sound like one was
+    # saved -- a deterministic, honest line replaces whatever the model said rather than trusting
+    # free text not to imply completion.
+    if args.get("sale_or_expense_mentioned"):
+        response = (
+            "Thanks for telling me! I can't record that just yet while we're still setting up "
+            "your business, but I'll make sure to save it properly for you as soon as we're done, "
+            "just a little more to go."
+        )
+
     if not response:
         # Should be rare given the prompt above, but never send a bare re-asked question with
         # zero acknowledgment that anything was said at all.

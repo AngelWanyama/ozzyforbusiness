@@ -77,6 +77,21 @@ async def cleanup(phone):
     con.close()
 
 
+def count_transactions(phone):
+    import sqlite3
+    con = sqlite3.connect("ozzy.db")
+    cur = con.cursor()
+    cur.execute("SELECT id FROM users WHERE phone_number = ?", (phone,))
+    row = cur.fetchone()
+    if not row:
+        con.close()
+        return 0
+    cur.execute("SELECT COUNT(*) FROM transactions WHERE user_id = ?", (row[0],))
+    n = cur.fetchone()[0]
+    con.close()
+    return n
+
+
 async def new_onboarding_user(client, phone):
     """Fresh user, onboarding started, ready for the first free-text turn."""
     await cleanup(phone)
@@ -210,6 +225,121 @@ async def test_all_info_at_once(client):
     await cleanup(phone)
 
 
+async def test_employees_decline_loop(client):
+    """Bug report 2026-09-22, Issue 2: 'Not right now' / 'No' to the employees question got
+    re-asked the identical question forever, permanently blocking onboarding completion for
+    anyone who didn't want to add employees immediately."""
+    print("\n=== ONBOARDING: employees decline must not loop (§3.12) ===")
+    phone = "+256700000909"
+    headers = await new_onboarding_user(client, phone)
+    for text in ["Angel", "Rinah Fashions", "I run a small boutique", "Kampala"]:
+        await send_msg(client, headers, text)
+    await send_choice(client, headers, "phone_confirm", "same")
+    await send_msg(client, headers, "I don't have one yet, that's fine")
+    await send_choice(client, headers, "logo", "none")
+
+    d = await send_msg(client, headers, "Not right now")
+    print("  reply 1:", d["reply"])
+    check(
+        "§3.12 decline gets the exact scripted text, not a repeated question",
+        "that's perfectly fine" in d["reply"].lower() and "always add employees later" in d["reply"].lower(),
+        d["reply"],
+    )
+    check("employees question is not asked again", "do you have any employees" not in d["reply"].lower(), d["reply"])
+    check("onboarding actually advanced past employees", d.get("field") != "employees", d)
+    await cleanup(phone)
+
+
+async def test_email_decline_variants(client):
+    """Issue 3 follow-up found during Issue 2's live retest: 'just my phone is fine' -- a
+    natural, common way to decline -- intermittently failed to register as declined the same
+    way 'No' did for employees. Confirms §3.10's exact text fires and onboarding advances."""
+    print("\n=== ONBOARDING: email decline with natural phrasing (§3.10) ===")
+    phone = "+256700000910"
+    headers = await new_onboarding_user(client, phone)
+    for text in ["Angel", "Rinah Fashions", "I run a small boutique", "Kampala"]:
+        await send_msg(client, headers, text)
+    await send_choice(client, headers, "phone_confirm", "same")
+
+    d = await send_msg(client, headers, "just my phone is fine")
+    print("  reply:", d["reply"])
+    check(
+        "§3.10 decline gets the exact scripted text",
+        "we can leave that for now" in d["reply"].lower(),
+        d["reply"],
+    )
+    check("email question is not asked again", "what email address" not in d["reply"].lower(), d["reply"])
+    await cleanup(phone)
+
+
+async def test_business_description_natural_phrasing(client):
+    """Issue 4, 2026-09-22: 'I sell ladies clothes and shoes' got no acknowledgment before the
+    next question. Confirmed already fixed by the 2026-09-21 strict-mode/response-first change
+    (8/8 reliable in isolated retesting) -- this is the permanent regression case for exactly
+    the phrasing from the bug report."""
+    print("\n=== ONBOARDING: business description acknowledgment (§3.7 exact phrasing) ===")
+    phone = "+256700000911"
+    headers = await new_onboarding_user(client, phone)
+    await send_msg(client, headers, "Angel")
+    await send_msg(client, headers, "Rinah Fashions")
+    d = await send_msg(client, headers, "I sell ladies clothes and shoes")
+    print("  reply:", d["reply"])
+    response_line = d["reply"].split("\n\n")[0].strip()
+    check(
+        "business description gets a real acknowledgment, not a bare re-ask",
+        bool(response_line) and response_line.lower() != "got it.",
+        d["reply"],
+    )
+    check("moves on to the next question instead of repeating itself", "where is your business located" in d["reply"].lower(), d["reply"])
+    await cleanup(phone)
+
+
+async def test_sale_mentioned_mid_onboarding(client):
+    """Issue 5, 2026-09-22: a sale mentioned mid-onboarding ('Sold shoes at 50,000 ugx, one
+    pair') got a conversational reply that sounded exactly like a real confirmation ('Got it,
+    ...sold for 50,000 UGX') while nothing was written to the transactions table -- a false
+    confirmation. Onboarding has no PROPOSE/COMMIT integration, so the fix is honesty: the reply
+    must not imply anything was recorded, and nothing should actually land in the database."""
+    print("\n=== ONBOARDING: a sale mentioned mid-onboarding must not be falsely confirmed ===")
+    phone = "+256700000912"
+    headers = await new_onboarding_user(client, phone)
+    await send_msg(client, headers, "Angel")
+    await send_msg(client, headers, "Rinah Fashions")
+
+    before = count_transactions(phone)
+    d = await send_msg(client, headers, "Sold shoes at 50,000 ugx, one pair")
+    print("  reply:", d["reply"])
+    after = count_transactions(phone)
+    reply = d["reply"].lower()
+    check("does not falsely claim the sale was recorded/saved", "got it, a pair of shoes sold" not in reply and "recorded" not in reply, d["reply"])
+    check("is honest that this hasn't been saved yet", "can't record" in reply or "not yet" in reply or "once we" in reply or "once we're done" in reply, d["reply"])
+    check("nothing was actually written to the transactions table", after == before, f"before={before} after={after}")
+    await cleanup(phone)
+
+
+async def test_pricing_bare_pronoun_answer(client):
+    """Found live while retesting Issue 2 (not in the original report): 'I buy them at 10000
+    and sell at 20000' -- a completely normal answer once a product's already been named --
+    failed to extract a price at all about 1 in 6 tries, since the pending item's name is never
+    restated in a 'them' answer. This would silently block onboarding completion on the very
+    last question. Confirms the deterministic two-number fallback catches it every time."""
+    print("\n=== ONBOARDING: pricing answered with a bare pronoun ('them') ===")
+    phone = "+256700000913"
+    headers = await new_onboarding_user(client, phone)
+    for text in ["Angel", "Rinah Fashions", "Shoes", "Kampala"]:
+        await send_msg(client, headers, text)
+    await send_choice(client, headers, "phone_confirm", "same")
+    await send_msg(client, headers, "just my phone is fine")
+    await send_choice(client, headers, "logo", "none")
+    d = await send_msg(client, headers, "Not right now")
+    print("  reply before pricing:", d["reply"], " field=", d.get("field"))
+
+    d = await send_msg(client, headers, "I buy them at 10000 and sell at 20000")
+    print("  pricing reply:", d["reply"], " done=", d["done"])
+    check("a bare-pronoun price answer is accepted, onboarding reaches completion", d.get("done") is True, d)
+    await cleanup(phone)
+
+
 async def test_full_flow_scripted_acks(client):
     """Walks a full onboarding conversation end to end, confirming every exact §3.5/§3.6/§3.13
     scripted acknowledgment fires on its own single-fact turn, and that the whole state machine
@@ -321,6 +451,11 @@ async def main():
         await test_rude_reply(client)
         await test_refuses_to_continue(client)
         await test_all_info_at_once(client)
+        await test_employees_decline_loop(client)
+        await test_email_decline_variants(client)
+        await test_business_description_natural_phrasing(client)
+        await test_sale_mentioned_mid_onboarding(client)
+        await test_pricing_bare_pronoun_answer(client)
         await test_full_flow_scripted_acks(client)
 
         phone = "+256700000999"
