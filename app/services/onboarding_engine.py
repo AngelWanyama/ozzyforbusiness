@@ -317,7 +317,18 @@ async def interpret_onboarding_message(user: User, state: Dict[str, Any], text: 
     messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": text}]
     msg = ai_client.chat(messages, tools=TOOLS, tool_choice="required")
     if msg is None or not msg.tool_calls:
-        return {"state": state, "reply": "Sorry, I didn't quite catch that.", "done": False}
+        # ai_client.chat already retried once internally -- this is a genuine, still-unresolved
+        # failure, most commonly a connectivity problem reaching OpenAI, not the model failing to
+        # understand plain English (confirmed live 2026-09-22: a real "Connection error" got
+        # surfaced as if Ozzy hadn't understood "I sale ladies clothes", when the message never
+        # reached the model at all). Re-show whatever was pending so there's an actual next step
+        # instead of a dead end with nothing further to do.
+        note = "Sorry, I'm having a little trouble connecting right now. Could you try sending that again?"
+        if target is not None:
+            q = question_for(target, state, user)
+            reply = f"{note}\n\n{q['text']}"
+            return {"state": state, "reply": reply, "done": False, "next_field": target, "kind": q["kind"], "choices": q.get("choices")}
+        return {"state": state, "reply": note, "done": False}
 
     try:
         args = json.loads(msg.tool_calls[0].function.arguments or "{}")

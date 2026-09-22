@@ -124,6 +124,33 @@ async def test_name_typo(client):
     await cleanup(phone)
 
 
+async def test_wrong_word_substitution(client):
+    """Bug 3, 2026-09-22: a real live 'Connection error' reaching OpenAI got surfaced as Ozzy
+    failing to understand "I sale ladies clothes" -- the message never reached the model at all.
+    ai_client.chat now retries once on a connection error, so this should sail through under
+    normal conditions. This is also §3.2's actual target case (a simple wrong-word substitution,
+    not just a misspelling): confirm Ozzy reads intent, not just characters."""
+    print("\n=== ONBOARDING: business description with a common wrong-word substitution ===")
+    phone = "+256700000908"
+    headers = await new_onboarding_user(client, phone)
+    await send_msg(client, headers, "Angel")
+    await send_msg(client, headers, "Rinah Fashions")
+    d = await send_msg(client, headers, "I sale ladies clothes")
+    print("  reply:", d["reply"])
+    reply = d["reply"]
+    check(
+        "wrong-word substitution ('sale' for 'sell') is understood, not a generic non-answer",
+        "didn't quite catch" not in reply.lower() and "having a little trouble" not in reply.lower() and "isn't configured" not in reply.lower(),
+        reply,
+    )
+    check(
+        "business description is recognized as answered, Ozzy moves forward instead of re-asking it",
+        "what do you sell or what services do you offer" not in reply.lower(),
+        reply,
+    )
+    await cleanup(phone)
+
+
 async def test_direct_question_to_ozzy(client):
     print("\n=== ONBOARDING: a direct question aimed at Ozzy mid-onboarding ===")
     phone = "+256700000903"
@@ -289,6 +316,7 @@ async def main():
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         await test_single_word_name(client)
         await test_name_typo(client)
+        await test_wrong_word_substitution(client)
         await test_direct_question_to_ozzy(client)
         await test_rude_reply(client)
         await test_refuses_to_continue(client)
