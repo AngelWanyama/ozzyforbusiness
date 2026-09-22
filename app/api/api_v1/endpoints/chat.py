@@ -54,6 +54,21 @@ async def confirm_chat_proposal(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.post("/cancel", response_model=ChatConfirmResponse)
+async def cancel_chat_proposal(
+    request: ChatConfirmRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Backs the confirm card's No button (2026-09-22 platform-wide button rule) — every yes/no
+    proposal gets an explicit cancel path here, not just a typed 'no'."""
+    try:
+        result = await chat_engine.cancel_proposal_by_id(db, current_user, request.proposal_id)
+        return ChatConfirmResponse(**result)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/onboarding-start", response_model=OnboardingTurnResponse)
 async def onboarding_start(
     local_hour: Optional[int] = None,

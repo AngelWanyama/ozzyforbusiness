@@ -12,11 +12,12 @@ interface Draft { type: 'sale' | 'expense'; description: string; amount: number;
 interface Msg {
   id: string;
   role: 'ozzy' | 'user';
-  kind: 'text' | 'confirm' | 'recorded' | 'onboard-choice' | 'onboard-logo-upload';
+  kind: 'text' | 'confirm' | 'confirm-generic' | 'recorded' | 'onboard-choice' | 'onboard-logo-upload';
   text?: string;
   draft?: Draft;
   choices?: { label: string; value: string }[];
   field?: string; // which onboarding field a choice/upload message is about
+  proposalId?: string; // for confirm-generic: which proposal Yes/No acts on
 }
 
 const WELCOME_BACK_TEXT = "👋 Hi! I'm Ozzy, your business partner. Tell me what happened today, like \"Sold 3 sodas 6,000\" or \"Bought airtime 5,000\". You can also ask me things like \"What's my profit today?\"";
@@ -291,6 +292,12 @@ export default function Chat() {
       const type: 'sale' | 'expense' = res.action === 'confirm_sale' ? 'sale' : 'expense';
       const d = res.draft || {};
       showConfirm({ type, description: d.description || 'item', amount: parseFloat(d.amount) || 0, quantity: parseFloat(d.quantity) || 1, category: d.category, original: originalText, proposalId: res.proposal_id });
+    } else if (res.action === 'confirm') {
+      // Platform-wide button rule (2026-09-22): any yes/no question anywhere in the app gets a
+      // button pair, not just sale/expense. This is the generic case, add-product, mark an
+      // invoice paid, remove a worker, and anywhere else a propose_* preview needs a plain
+      // yes/no rather than a full sale/expense card.
+      push({ role: 'ozzy', kind: 'confirm-generic', text: res.reply, proposalId: res.proposal_id });
     } else if (res.action === 'need_amount') {
       // No local draft is kept, the backend has already stored this as a pending (if
       // incomplete) proposal, so the next message goes straight back through /chat/process,
@@ -353,6 +360,27 @@ export default function Chat() {
     setInput(m.draft?.original || '');
     push({ role: 'ozzy', kind: 'text', text: `Sure, I've put it back below. Fix it and send again.` });
     document.getElementById('chat-input')?.focus();
+  };
+
+  // Generic Yes/No confirm card (platform-wide button rule, 2026-09-22): add-product,
+  // mark-invoice-paid, remove-worker, and any other plain yes/no proposal, as opposed to the
+  // sale/expense card above which has its own amount/type-specific "recorded" display.
+  const confirmGenericYes = async (m: Msg) => {
+    if (!m.proposalId) return;
+    setMessages(p => p.filter(x => x.id !== m.id));
+    try {
+      const res: any = await api.confirmChatProposal(m.proposalId);
+      push({ role: 'ozzy', kind: 'text', text: res.reply || (res.ok ? 'Done.' : 'That confirmation has expired, please send it again.') });
+      if (profile?.role === 'owner') loadSummary();
+    } catch { push({ role: 'ozzy', kind: 'text', text: `Couldn't complete that. Please try again.` }); }
+  };
+  const confirmGenericNo = async (m: Msg) => {
+    if (!m.proposalId) return;
+    setMessages(p => p.filter(x => x.id !== m.id));
+    try {
+      const res: any = await api.cancelChatProposal(m.proposalId);
+      push({ role: 'ozzy', kind: 'text', text: res.reply || 'No problem, cancelled.' });
+    } catch { push({ role: 'ozzy', kind: 'text', text: `Couldn't cancel that. Please try again.` }); }
   };
 
   const onKey = (e: React.KeyboardEvent) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } };
@@ -518,6 +546,14 @@ export default function Chat() {
                       <button onClick={() => confirmYes(m)} className="flex-1 py-3.5 bg-primary text-white font-bold rounded-xl hover:opacity-90 active:scale-95 transition-all">Yes, record it</button>
                       <button onClick={() => confirmEdit(m)} className="px-5 py-3.5 border border-primary text-primary font-bold rounded-xl hover:bg-primary/5 active:scale-95 transition-all">Edit</button>
                     </div>
+                  </div>
+                </div>
+              ) : m.kind === 'confirm-generic' ? (
+                <div className="bg-surface-container-high text-on-surface p-lg rounded-2xl rounded-tl-none w-full max-w-[420px] shadow-sm">
+                  <p className="font-body-md text-body-md mb-md whitespace-pre-line">{m.text}</p>
+                  <div className="flex gap-md">
+                    <button onClick={() => confirmGenericYes(m)} className="flex-1 py-3.5 bg-primary text-white font-bold rounded-xl hover:opacity-90 active:scale-95 transition-all">Yes</button>
+                    <button onClick={() => confirmGenericNo(m)} className="px-5 py-3.5 border border-primary text-primary font-bold rounded-xl hover:bg-primary/5 active:scale-95 transition-all">No</button>
                   </div>
                 </div>
               ) : m.kind === 'recorded' && m.draft ? (

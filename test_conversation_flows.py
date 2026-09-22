@@ -405,7 +405,10 @@ async def test_chat_sales(client, headers):
     r = await client.post("/api/v1/chat/process", json={"text": "sold 2 dresses at 30000 each"}, headers=headers)
     d = r.json()
     print("  reply:", d)
-    if d["action"] == "reply" and (d.get("reply") or "").lower().startswith("i don't have"):
+    # 2026-09-22 platform-wide button rule: this "want me to add it?" question now returns
+    # action="confirm" (button-backed) instead of a plain "reply" -- typed "yes" must still work
+    # too, confirmed here.
+    if d["action"] == "confirm" and (d.get("reply") or "").lower().startswith("i don't have"):
         r = await client.post("/api/v1/chat/process", json={"text": "yes"}, headers=headers)
         d = r.json()
         print("  reply (after confirming add-product):", d)

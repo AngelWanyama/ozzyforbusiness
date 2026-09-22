@@ -438,13 +438,37 @@ class ChatEngine:
             return {"ok": False, "reply": "That confirmation has expired, please send it again."}
         stmt = select(ChatProposal).where(ChatProposal.id == pid, ChatProposal.user_id == user.id)
         proposal = (await db.execute(stmt)).scalars().first()
-        if (
-            not proposal or proposal.status != "pending" or proposal.expires_at <= datetime.utcnow()
-            or proposal.function_name in INCOMPLETE_PROPOSAL_FUNCTIONS
-        ):
+        if not proposal or proposal.status != "pending" or proposal.expires_at <= datetime.utcnow():
+            return {"ok": False, "reply": "That confirmation has expired, please send it again."}
+        if proposal.function_name == "propose_sale_incomplete":
+            # The only button-confirmable propose_sale_incomplete case is "want me to add this
+            # new product?" -- shares the exact handler typed "yes" already uses. If this
+            # particular proposal was actually the "how much in total?" sub-case instead, it was
+            # never offered as a button in the first place (see _propose_sale, that branch stays
+            # action="need_amount"), so this only ever runs for the yes/no case in practice.
+            resolved = await self._auto_add_unmatched_products(db, user, proposal)
+            if resolved is None:
+                return {"ok": False, "reply": "That confirmation has expired, please send it again."}
+            return {"ok": True, **resolved}
+        if proposal.function_name in INCOMPLETE_PROPOSAL_FUNCTIONS:
             return {"ok": False, "reply": "That confirmation has expired, please send it again."}
         result = await self._commit_proposal(db, user, proposal)
         return {"ok": True, **result}
+
+    async def cancel_proposal_by_id(self, db: AsyncSession, user: User, proposal_id: str) -> Dict[str, Any]:
+        """Backs the confirm-card No button (2026-09-22 platform-wide button rule) -- the same
+        explicit, unambiguous guarantee as a typed 'no', but without requiring one."""
+        try:
+            pid = uuid.UUID(proposal_id)
+        except ValueError:
+            return {"ok": False, "reply": "That's already been handled, no need to cancel."}
+        stmt = select(ChatProposal).where(ChatProposal.id == pid, ChatProposal.user_id == user.id)
+        proposal = (await db.execute(stmt)).scalars().first()
+        if not proposal or proposal.status != "pending":
+            return {"ok": False, "reply": "That's already been handled, no need to cancel."}
+        proposal.status = "cancelled"
+        await db.commit()
+        return {"ok": True, "reply": "No problem, cancelled."}
 
     async def _run_ai_turn(self, db: AsyncSession, user: User, text: str, pending: Optional[ChatProposal]) -> Dict[str, Any]:
         system_prompt = await _system_prompt(db, user, pending)
@@ -557,8 +581,12 @@ class ChatEngine:
             # the product gets added, see _commit_add_product, which resumes from exactly this,
             # replaying trigger_text (this original message, NOT whatever short reply, "yes" —
             # ends up being the one that actually invokes add_product a turn or two later).
-            await _create_proposal(db, user, "propose_sale_incomplete", {"line_items": resolved, "payment_type": args.get("payment_type", "cash"), "customer_name": args.get("customer_name"), "trigger_text": text}, preview)
-            return {"reply": preview, "action": "reply"}
+            proposal = await _create_proposal(db, user, "propose_sale_incomplete", {"line_items": resolved, "payment_type": args.get("payment_type", "cash"), "customer_name": args.get("customer_name"), "trigger_text": text}, preview)
+            # Platform-wide button rule (2026-09-22): this is a genuine yes/no question ("want me
+            # to add it?"), so it gets the same confirm/cancel button pair as everything else,
+            # not just plain text -- typed "yes" still works too, see the dedicated handling in
+            # handle_message for _auto_add_unmatched_products.
+            return {"reply": preview, "action": "confirm", "proposal_id": str(proposal.id)}
 
         missing_amount = [r for r in resolved if r["line_total"] is None]
         if missing_amount:
@@ -602,7 +630,11 @@ class ChatEngine:
 
         if as_card:
             return {"reply": None, "action": "confirm_sale", "draft": draft, "proposal_id": str(proposal.id)}
-        return {"reply": f"{prefix}{preview}", "action": "reply", "proposal_id": str(proposal.id)}
+        # Platform-wide button rule (2026-09-22): "Ready to record?" is itself a yes/no question
+        # (this path runs when a sale resumes right after a brand-new product just got added), so
+        # it gets the same button treatment as everything else -- the resulting proposal is a
+        # normal "propose_sale", so tapping Yes on this card commits through the usual sale path.
+        return {"reply": f"{prefix}{preview}", "action": "confirm", "proposal_id": str(proposal.id)}
 
     async def _auto_add_unmatched_products(self, db: AsyncSession, user: User, pending: ChatProposal) -> Optional[Dict[str, Any]]:
         """Deterministic app-code handling of 'yes' to 'want me to add this product?', see the
@@ -660,7 +692,7 @@ class ChatEngine:
             trigger_text = text
         payload = {"name": name, "is_service": is_service, "selling_price": selling_price, "trigger_text": trigger_text}
         proposal = await _create_proposal(db, user, "add_product", payload, preview)
-        return {"reply": preview, "action": "reply", "proposal_id": str(proposal.id)}
+        return {"reply": preview, "action": "confirm", "proposal_id": str(proposal.id)}
 
     async def _propose_expense(self, db: AsyncSession, user: User, business_id, args: Dict[str, Any]) -> Dict[str, Any]:
         description = (args.get("description") or "expense").strip()
@@ -692,7 +724,7 @@ class ChatEngine:
         preview = f"{customer_name} currently owes {_fmt(user.currency, customer.outstanding_balance)}. Mark {_fmt(user.currency, pay_amount)} as paid now?"
         payload = {"customer_id": str(customer.id), "amount": pay_amount}
         proposal = await _create_proposal(db, user, "mark_customer_paid", payload, preview)
-        return {"reply": preview, "action": "reply", "proposal_id": str(proposal.id)}
+        return {"reply": preview, "action": "confirm", "proposal_id": str(proposal.id)}
 
     async def _propose_document(self, db: AsyncSession, user: User, business_id, args: Dict[str, Any]) -> Dict[str, Any]:
         customer_name = (args.get("customer_name") or "").strip() or "Customer"
@@ -713,7 +745,7 @@ class ChatEngine:
         preview = f"{doc_word} for {customer_name}, {item_desc}, total {_fmt(user.currency, total)}. Ready to send it?"
         payload = {"customer_name": customer_name, "items": items, "already_paid": already_paid, "total": total}
         proposal = await _create_proposal(db, user, "generate_document_preview", payload, preview)
-        return {"reply": preview, "action": "reply", "proposal_id": str(proposal.id)}
+        return {"reply": preview, "action": "confirm", "proposal_id": str(proposal.id)}
 
     async def _propose_currency_change(self, db: AsyncSession, user: User, args: Dict[str, Any]) -> Dict[str, Any]:
         new_currency = (args.get("new_currency") or "").strip().upper()
@@ -725,7 +757,7 @@ class ChatEngine:
             "display currency going forward changes. Confirm?"
         )
         proposal = await _create_proposal(db, user, "propose_currency_change", {"new_currency": new_currency}, preview)
-        return {"reply": preview, "action": "reply", "proposal_id": str(proposal.id)}
+        return {"reply": preview, "action": "confirm", "proposal_id": str(proposal.id)}
 
     async def _propose_worker_invite(self, db: AsyncSession, user: User, args: Dict[str, Any]) -> Dict[str, Any]:
         phone = (args.get("worker_phone_number") or "").strip()
@@ -733,7 +765,7 @@ class ChatEngine:
             return {"reply": "What's their phone number? I'll generate an invite code valid for 7 days.", "action": "reply"}
         preview = f"Generate a 7-day invite code for {phone}?"
         proposal = await _create_proposal(db, user, "generate_worker_invite", {"worker_phone_number": phone}, preview)
-        return {"reply": preview, "action": "reply", "proposal_id": str(proposal.id)}
+        return {"reply": preview, "action": "confirm", "proposal_id": str(proposal.id)}
 
     async def _propose_remove_worker(self, db: AsyncSession, user: User, business_id, args: Dict[str, Any]) -> Dict[str, Any]:
         phone = (args.get("worker_phone_number") or "").strip()
@@ -743,7 +775,7 @@ class ChatEngine:
             return {"reply": f"I couldn't find a worker with the number {phone} on this business.", "action": "reply"}
         preview = f"Remove {phone}'s access to this business? They'll keep their own login but lose access to this business's data."
         proposal = await _create_proposal(db, user, "propose_remove_worker", {"worker_id": str(worker.id), "phone": phone}, preview)
-        return {"reply": preview, "action": "reply", "proposal_id": str(proposal.id)}
+        return {"reply": preview, "action": "confirm", "proposal_id": str(proposal.id)}
 
     async def _propose_mark_document_paid(self, db: AsyncSession, user: User, business_id, args: Dict[str, Any]) -> Dict[str, Any]:
         customer_name = (args.get("customer_name") or "").strip()
@@ -758,7 +790,7 @@ class ChatEngine:
             return {"reply": f"I don't have an unpaid invoice on record for {customer_name}.", "action": "reply"}
         preview = f"Mark invoice {invoice.invoice_number} for {customer_name} ({_fmt(invoice.currency, invoice.total_amount)}) as paid?"
         proposal = await _create_proposal(db, user, "mark_document_paid", {"invoice_id": str(invoice.id)}, preview)
-        return {"reply": preview, "action": "reply", "proposal_id": str(proposal.id)}
+        return {"reply": preview, "action": "confirm", "proposal_id": str(proposal.id)}
 
     async def _handle_update_profile_field(self, db: AsyncSession, user: User, args: Dict[str, Any]) -> Dict[str, Any]:
         field = args.get("field")

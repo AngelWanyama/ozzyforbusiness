@@ -35,6 +35,15 @@ class ChatConfirmRequest(BaseModel):
 class ChatConfirmResponse(BaseModel):
     ok: bool
     reply: Optional[str] = None
+    # Present when confirming one proposal (e.g. "add this new product?") resumes straight into
+    # another (the sale it was blocking) rather than just finishing — 2026-09-22 platform-wide
+    # button rule, the frontend needs these to show the next confirm card immediately instead of
+    # silently dropping it, which is exactly what happened before these fields existed here: this
+    # response model previously only declared ok/reply, so FastAPI's response_model filtering
+    # silently stripped action/proposal_id/draft off of whatever the service layer returned.
+    action: Optional[str] = None
+    proposal_id: Optional[str] = None
+    draft: Optional[ChatDraft] = None
 
 
 # --- Onboarding, state-based per Volume 3 of the Brain doc (§3.20) ---

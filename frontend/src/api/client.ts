@@ -93,6 +93,10 @@ class ApiClient {
     return this.request<any>('/chat/confirm', { method: 'POST', body: JSON.stringify({ proposal_id: proposalId }) });
   }
 
+  async cancelChatProposal(proposalId: string) {
+    return this.request<any>('/chat/cancel', { method: 'POST', body: JSON.stringify({ proposal_id: proposalId }) });
+  }
+
   // === Reports ===
   async getReportSummary() {
     return this.request<any>('/reports/summary');

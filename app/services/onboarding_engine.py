@@ -145,9 +145,10 @@ def next_missing_field(state: Dict[str, Any]) -> Optional[str]:
 
 
 def question_for(field: str, state: Dict[str, Any], user: User) -> Dict[str, Any]:
-    """Returns {text, kind, choices?} for a given field -- most are plain text, phone_confirm and
-    logo are the two places a button genuinely earns its place (Volume 2), matching what's
-    already built in the frontend for them."""
+    """Returns {text, kind, choices?} for a given field. Platform-wide rule (2026-09-22): any
+    question with a genuine yes/no answer shows a button pair, matching phone_confirm/logo's
+    existing style -- a button is always the easy, obvious path, typed language is still a full
+    equal alternative (see handle_onboarding_choice and the model's own extraction for each)."""
     if field == "phone_confirm":
         phone = user.phone_number
         return {
@@ -158,6 +159,16 @@ def question_for(field: str, state: Dict[str, Any], user: User) -> Dict[str, Any
         return {
             "kind": "logo", "text": QUESTIONS["logo"],
             "choices": [{"label": "I have one", "value": "has_one"}, {"label": "I don't have one yet", "value": "none"}],
+        }
+    if field == "email":
+        return {
+            "kind": "choice", "text": QUESTIONS["email"],
+            "choices": [{"label": "Add an email", "value": "add"}, {"label": "Just my phone is fine", "value": "skip"}],
+        }
+    if field == "employees":
+        return {
+            "kind": "choice", "text": QUESTIONS["employees"],
+            "choices": [{"label": "Yes", "value": "yes"}, {"label": "Not right now", "value": "no"}],
         }
     if field == "pricing":
         known = state.get("known", {})
@@ -292,6 +303,15 @@ FALLBACK_ELIGIBLE_FIELDS = set(FALLBACK_MAX_WORDS)
 # check alone.
 _SECOND_PERSON_RE = re.compile(r"\byou\b|\byour\b|\byou're\b|\byou'll\b|\byou've\b", re.IGNORECASE)
 
+# Confirmed live (2026-09-22, second occurrence): "Answer my question first." -- one of the
+# original bug report's own test cases -- also slipped through once (it has no "you", so the
+# guard above didn't catch it) and got accepted as a literal business_name. A real name/place
+# never opens with an imperative verb aimed at Ozzy, so this is a second, narrow guard for
+# exactly that shape of sentence.
+_IMPERATIVE_OPENER_RE = re.compile(
+    r"^\s*(answer|tell|explain|stop|wait|listen|give|show|help|respond|reply)\b", re.IGNORECASE
+)
+
 # Confirmed live (2026-09-22): a plain "No" / "Not right now" / "Not yet" answer to the
 # employees question is consistently marked off_topic=true with nothing extracted at all --
 # gpt-4o-mini doesn't reliably map a short decline to employees_count=0. Rather than add
@@ -378,6 +398,10 @@ async def interpret_onboarding_message(user: User, state: Dict[str, Any], text: 
         pending_item = _pending_pricing_item_name(state)
         if pending_item:
             target_label = f"the buying and selling price for '{pending_item}' -- if they answer with just numbers, or say 'them'/'it', they mean the price of '{pending_item}'"
+    elif target == "employees" and state.get("awaiting") == "employees_count_text":
+        # Reached only when handle_awaiting_capture found no plain digit (e.g. "three" spelled
+        # out) -- same ambiguity problem as pricing above, name what's actually being asked.
+        target_label = "how many employees they have -- expect a number (a word like 'three' counts too), set employees_count to it"
     system_prompt = (
         "IDENTITY: You are Ozzy, warm, friendly, calm, patient, encouraging, respectful, helpful, "
         "human, non-judgmental. Never robotic, bureaucratic, clinical, condescending, overly "
@@ -483,6 +507,7 @@ async def interpret_onboarding_message(user: User, state: Dict[str, Any], text: 
         and "?" not in text
         and len(text.split()) <= FALLBACK_MAX_WORDS[target]
         and not _SECOND_PERSON_RE.search(text)
+        and not _IMPERATIVE_OPENER_RE.match(text)
     ):
         known[target] = text.strip()
         newly_filled.append(target)
@@ -606,21 +631,54 @@ def handle_onboarding_choice(user: User, state: Dict[str, Any], field: str, valu
         state = {**state, "known": known, "declined": declined, "awaiting": None}
         return _advance(state, user, prefix=f"{LOGO_DECLINE_REPLY}\n\n")
 
+    if field == "email":
+        if value == "add":
+            # Stay on this question until the actual address is captured as free text, same
+            # pattern as phone_confirm's "different" branch.
+            state = {**state, "known": known}
+            return {"state": state, "reply": "What's your email?", "done": False, "next_field": "email", "kind": "text"}
+        # "skip"
+        declined.append("email")
+        state = {**state, "known": known, "declined": declined}
+        return _advance(state, user, prefix=f"{EMAIL_DECLINE_REPLY}\n\n")
+
+    if field == "employees":
+        if value == "yes":
+            # Confirmed live (2026-09-22): a bare digit answer like "3" to this follow-up was
+            # occasionally not recognized as answering "employees" by the model (target_label
+            # just said "employees", not specifically "expect a number"), so this is captured
+            # deterministically instead, see handle_awaiting_capture's "employees_count_text".
+            state = {**state, "known": known, "awaiting": "employees_count_text"}
+            return {"state": state, "reply": "Great! How many employees do you have?", "done": False, "next_field": "employees", "kind": "text"}
+        # "no"
+        known["employees_count"] = 0
+        state = {**state, "known": known}
+        return _advance(state, user, prefix=f"{EMPLOYEES_NO_REPLY}\n\n")
+
     return _advance(state, user)
 
 
 def handle_awaiting_capture(user: User, state: Dict[str, Any], text: str) -> Optional[Dict[str, Any]]:
     """If the previous turn left something specific pending (the actual phone number after
-    choosing 'different'), the next plain message is captured directly rather than run through
-    general extraction. Returns None if nothing was pending."""
+    choosing 'different', or a headcount after tapping 'Yes' to employees), the next plain
+    message is captured directly rather than run through general extraction. Returns None if
+    nothing was pending (falls through to the model turn)."""
     awaiting = state.get("awaiting")
-    if awaiting != "contact_phone_text":
-        return None
-    known = dict(state.get("known", {}))
-    known["contact_phone"] = text.strip()
-    known["phone_confirm"] = "different"
-    state = {**state, "known": known, "awaiting": None}
-    return _advance(state, user)
+    if awaiting == "contact_phone_text":
+        known = dict(state.get("known", {}))
+        known["contact_phone"] = text.strip()
+        known["phone_confirm"] = "different"
+        state = {**state, "known": known, "awaiting": None}
+        return _advance(state, user)
+    if awaiting == "employees_count_text":
+        m = re.search(r"\d+", text)
+        if not m:
+            return None  # not a plain digit ("a few", "three") -- let the model take a shot
+        known = dict(state.get("known", {}))
+        known["employees_count"] = int(m.group())
+        state = {**state, "known": known, "awaiting": None}
+        return _advance(state, user)
+    return None
 
 
 async def finalize_onboarding(db: AsyncSession, user: User, state: Dict[str, Any]) -> None:
