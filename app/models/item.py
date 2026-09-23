@@ -12,7 +12,8 @@ class Item(Base):
     business_id = Column(UUID(as_uuid=True), nullable=False, index=True)
     name = Column(String, index=True, nullable=False)
     category = Column(String, nullable=True)
-    unit_price = Column(Numeric(precision=18, scale=2), nullable=True)
+    unit_price = Column(Numeric(precision=18, scale=2), nullable=True)  # selling price
+    buying_price = Column(Numeric(precision=18, scale=2), nullable=True)  # cost price, for profit calc
     stock_level = Column(Numeric(precision=18, scale=2), default=0)
     is_service = Column(Boolean, default=False)
 

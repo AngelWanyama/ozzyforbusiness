@@ -444,6 +444,85 @@ async def test_chat_sales(client, headers):
     )
 
 
+async def test_cogs_profit_calculation(client):
+    """2026-09-23, CRITICAL: net_profit was sales minus expenses everywhere in the app, cost of
+    goods sold never subtracted despite buying_price being collected. Recreates Angel's exact
+    live numbers: shoes bought at 15,000, sold at 30,000, one other expense of 4,918.04. Real
+    profit is 30,000 - 15,000 - 4,918.04 = 10,081.96, not 25,081.96 (sales minus expenses alone).
+    Uses the REST endpoints directly for the expense (not chat) to isolate the COGS calculation
+    itself from the model's occasional expense-category back-and-forth, a separate concern."""
+    print("\n=== CHAT: cost of goods sold in profit calculation ===")
+    phone = "+256700000950"
+    await cleanup(phone)
+    token = await register(client, phone)
+    headers = {"Authorization": f"Bearer {token}"}
+    await client.patch("/api/v1/users/me", json={"business_name": "Test Co", "currency": "UGX", "onboarding_completed": True}, headers=headers)
+
+    r = await client.post("/api/v1/inventory/", json={"name": "shoes", "unit_price": 30000, "buying_price": 15000, "stock_level": 10, "is_service": False}, headers=headers)
+    check("inventory endpoint accepts and stores a buying_price", r.status_code == 200 and r.json().get("buying_price") == "15000.00", r.json())
+
+    r = await client.post("/api/v1/chat/process", json={"text": "sold 1 pair of shoes at 30000"}, headers=headers)
+    d = r.json()
+    if d.get("proposal_id"):
+        await client.post("/api/v1/chat/confirm", json={"proposal_id": d["proposal_id"]}, headers=headers)
+
+    await client.post("/api/v1/transactions/", json={"type": "expense", "amount": 4918.04, "description": "transport", "category": "Transport", "quantity": 1}, headers=headers)
+
+    r = await client.get("/api/v1/reports/summary", headers=headers)
+    d = r.json()
+    print("  /reports/summary:", d)
+    check("sales are correct", float(d["total_sales"]) == 30000, d)
+    check("cost of goods sold is correctly captured (15,000, not 0)", float(d["cost_of_goods_sold"]) == 15000, d)
+    check("net profit subtracts COGS, not just expenses (10,081.96, not 25,081.96)", abs(float(d["net_profit"]) - 10081.96) < 0.01, d)
+    check("cogs_known_complete is true when every sold item has a buying price on file", d["cogs_known_complete"] is True, d)
+
+    r = await client.post("/api/v1/chat/process", json={"text": "what are my profits today"}, headers=headers)
+    reply = (r.json().get("reply") or "").lower()
+    print("  chat reply:", reply)
+    check("chat answer reflects the real (COGS-aware) profit, not sales minus expenses alone", "10,081" in reply or "10081" in reply, reply)
+
+    r = await client.post("/api/v1/chat/process", json={"text": "what's my margin on shoes"}, headers=headers)
+    reply = (r.json().get("reply") or "").lower()
+    print("  margin reply:", reply)
+    check("per-item margin question is answered correctly (15,000 / 50%)", ("15,000" in reply or "15000" in reply) and "50" in reply, reply)
+
+    await cleanup(phone)
+
+
+async def test_cogs_unknown_buying_price_is_honest(client):
+    """Explicit requirement: an item with no buying price on file must never be silently treated
+    as zero cost (which would overstate profit) -- the app must flag it as incomplete instead."""
+    print("\n=== CHAT: profit is honest when a buying price is unknown ===")
+    phone = "+256700000951"
+    await cleanup(phone)
+    token = await register(client, phone)
+    headers = {"Authorization": f"Bearer {token}"}
+    await client.patch("/api/v1/users/me", json={"business_name": "Test Co", "currency": "UGX", "onboarding_completed": True}, headers=headers)
+
+    await client.post("/api/v1/inventory/", json={"name": "bags", "unit_price": 20000, "stock_level": 5, "is_service": False}, headers=headers)
+    r = await client.post("/api/v1/chat/process", json={"text": "sold 1 bag at 20000"}, headers=headers)
+    d = r.json()
+    if d.get("proposal_id"):
+        await client.post("/api/v1/chat/confirm", json={"proposal_id": d["proposal_id"]}, headers=headers)
+
+    r = await client.get("/api/v1/reports/summary", headers=headers)
+    d = r.json()
+    print("  /reports/summary:", d)
+    check("cogs_known_complete is false when a sold item has no buying price on file", d["cogs_known_complete"] is False, d)
+    check("cost of goods sold is not silently guessed as a real positive number", float(d["cost_of_goods_sold"]) == 0, d)
+
+    r = await client.post("/api/v1/chat/process", json={"text": "what are my profits today"}, headers=headers)
+    reply = (r.json().get("reply") or "").lower()
+    print("  chat reply:", reply)
+    check(
+        "reply honestly caveats that real profit may be lower, doesn't state the number as certain",
+        any(w in reply for w in ("lower", "not fully known", "n't know", "don't have", "unknown", "not on file", "may be")),
+        reply,
+    )
+
+    await cleanup(phone)
+
+
 async def main():
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
@@ -468,6 +547,9 @@ async def main():
         await client.patch("/api/v1/users/me", json={"business_name": "Test Co", "currency": "UGX"}, headers=headers)
         await test_chat_sales(client, headers)
         await cleanup(phone)
+
+        await test_cogs_profit_calculation(client)
+        await test_cogs_unknown_buying_price_is_honest(client)
 
     print("\n=== SUMMARY ===")
     for label, status in results:

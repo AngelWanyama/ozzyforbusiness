@@ -7,7 +7,7 @@ export default function Inventory() {
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editItem, setEditItem] = useState<any>(null);
-  const [form, setForm] = useState({ name: '', category: '', unit_price: '', stock_level: '', is_service: false });
+  const [form, setForm] = useState({ name: '', category: '', unit_price: '', buying_price: '', stock_level: '', is_service: false });
 
   const load = async () => {
     try { const d = await api.getInventory(); setItems(d || []); } catch {}
@@ -22,26 +22,31 @@ export default function Inventory() {
         name: form.name,
         category: form.category || undefined,
         unit_price: parseFloat(form.unit_price) || 0,
+        buying_price: form.buying_price ? parseFloat(form.buying_price) : undefined,
         stock_level: form.is_service ? 0 : (parseFloat(form.stock_level) || 0),
         is_service: form.is_service,
       };
       if (editItem) await api.updateItem(editItem.id, data);
       else await api.createItem(data);
       setShowModal(false); setEditItem(null);
-      setForm({ name: '', category: '', unit_price: '', stock_level: '', is_service: false });
+      setForm({ name: '', category: '', unit_price: '', buying_price: '', stock_level: '', is_service: false });
       load();
     } catch {}
   };
 
   const openAdd = () => {
     setEditItem(null);
-    setForm({ name: '', category: '', unit_price: '', stock_level: '', is_service: false });
+    setForm({ name: '', category: '', unit_price: '', buying_price: '', stock_level: '', is_service: false });
     setShowModal(true);
   };
 
   const openEdit = (item: any) => {
     setEditItem(item);
-    setForm({ name: item.name, category: item.category || '', unit_price: String(item.unit_price), stock_level: String(item.stock_level), is_service: item.is_service });
+    setForm({
+      name: item.name, category: item.category || '', unit_price: String(item.unit_price),
+      buying_price: item.buying_price != null ? String(item.buying_price) : '',
+      stock_level: String(item.stock_level), is_service: item.is_service,
+    });
     setShowModal(true);
   };
 
@@ -90,6 +95,9 @@ export default function Inventory() {
               </div>
               <div className="text-right">
                 <p className="font-semibold text-[#0D9488]">{fmt(item.unit_price)}</p>
+                {!item.is_service && (
+                  <p className="text-xs text-gray-400">{item.buying_price != null ? `cost ${fmt(item.buying_price)}` : 'no cost on file'}</p>
+                )}
                 <div className="flex gap-1 mt-1">
                   <button onClick={() => openEdit(item)} className="text-xs px-2 py-1 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600 transition">Edit</button>
                   {!item.is_service && (
@@ -117,16 +125,25 @@ export default function Inventory() {
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Unit Price</label>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Selling Price</label>
                   <input type="number" className="w-full px-4 py-2.5 border border-gray-200 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-800 dark:text-white focus:ring-2 focus:ring-[#0D9488] outline-none" required min="0" value={form.unit_price} onChange={e => setForm({...form, unit_price: e.target.value})} />
                 </div>
                 {!form.is_service && (
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Stock Level</label>
-                    <input type="number" className="w-full px-4 py-2.5 border border-gray-200 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-800 dark:text-white focus:ring-2 focus:ring-[#0D9488] outline-none" min="0" value={form.stock_level} onChange={e => setForm({...form, stock_level: e.target.value})} />
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Buying Price</label>
+                    <input type="number" className="w-full px-4 py-2.5 border border-gray-200 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-800 dark:text-white focus:ring-2 focus:ring-[#0D9488] outline-none" min="0" placeholder="What you paid" value={form.buying_price} onChange={e => setForm({...form, buying_price: e.target.value})} />
                   </div>
                 )}
               </div>
+              {!form.is_service && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Stock Level</label>
+                  <input type="number" className="w-full px-4 py-2.5 border border-gray-200 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-800 dark:text-white focus:ring-2 focus:ring-[#0D9488] outline-none" min="0" value={form.stock_level} onChange={e => setForm({...form, stock_level: e.target.value})} />
+                </div>
+              )}
+              {!form.is_service && !form.buying_price && (
+                <p className="text-xs text-amber-600 dark:text-amber-400">Without a buying price, Ozzy can't work out real profit for this item.</p>
+              )}
               <label className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
                 <input type="checkbox" checked={form.is_service} onChange={e => setForm({...form, is_service: e.target.checked})} className="rounded" />
                 This is a service (no stock tracking)

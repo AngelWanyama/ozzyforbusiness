@@ -29,6 +29,7 @@ from app.models.chat_proposal import ChatProposal
 from app.models.user import User
 from app.services.ai_client import ai_client
 from app.services.invoice_parser import invoice_parser
+from app.services.financials import calculate_period_financials
 
 logger = logging.getLogger(__name__)
 
@@ -66,8 +67,32 @@ READ_ONLY_FUNCTIONS = {"get_report_summary", "get_recent_activity", "get_invento
 # full context rather than straight to a commit_* handler.
 INCOMPLETE_PROPOSAL_FUNCTIONS = {"propose_sale_incomplete", "propose_expense_incomplete"}
 
-AFFIRMATIVE_RE = re.compile(r"^(yes|yeah|yep|yup|sure|ok(ay)?|confirm(ed)?|correct|right|go ahead|do it|record it|proceed)[.!\s]*$", re.IGNORECASE)
-NEGATIVE_RE = re.compile(r"^(no|nah|nope|cancel|stop|wrong|never ?mind|not now|don'?t)[.!\s]*$", re.IGNORECASE)
+
+# Confirmed live 2026-09-23: a rigid "the whole message must be exactly one of these words"
+# regex missed "Yes please" and other completely ordinary confirmations, falling through to the
+# model instead -- which sometimes then created a REDUNDANT, DIFFERENT proposal (e.g. calling
+# add_product on top of an already-pending propose_sale_incomplete) rather than just confirming
+# what was actually pending, compounding into the "asks the same thing three times" failure
+# reported the same night. Classification is now word-set based: the whole message must consist
+# only of core affirmative/negative words plus ordinary filler ("please", "thanks", "that's"),
+# with at least one core word present. This is deliberately still narrow (a message with any
+# other real content falls through to the model, same as before) but covers the natural ways a
+# real person actually confirms or declines something instead of only the bare minimum.
+_AFFIRMATIVE_CORE = {
+    "yes", "yeah", "yep", "yup", "yea", "sure", "ok", "okay", "confirm", "confirmed",
+    "correct", "right", "go", "ahead", "do", "it", "record", "proceed", "definitely",
+    "absolutely", "please",
+}
+_AFFIRMATIVE_FILLER = {"thanks", "thank", "you", "sounds", "good", "great", "that's", "thats"}
+_NEGATIVE_CORE = {
+    "no", "nah", "nope", "cancel", "stop", "wrong", "never", "not", "don't", "dont", "skip",
+}
+_NEGATIVE_FILLER = {"now", "thanks", "please", "yet", "mind", "thank", "you"}
+
+
+def _word_classify(text: str, core: set, filler: set) -> bool:
+    words = re.findall(r"[a-z']+", text.lower())
+    return bool(words) and all(w in core | filler for w in words) and any(w in core for w in words)
 
 # Same "how many read-only tool round trips before giving up" cap the old engine used —
 # gpt-4o-mini occasionally tries a second, narrower lookup when the first comes back empty.
@@ -183,7 +208,13 @@ TOOLS = [
     }},
     {"type": "function", "function": {
         "name": "get_report_summary",
-        "description": "Owner-only (Volume 10). Real sales, expenses, and profit for a period, never guess these numbers.",
+        "description": (
+            "Owner-only (Volume 10). Real sales, cost of goods sold, expenses, and profit for a "
+            "period, never guess these numbers. net_profit already has cost of goods sold "
+            "subtracted, don't subtract it again. If cogs_known_complete is false, some sold "
+            "items don't have a buying price on file, so mention plainly that real profit could "
+            "be a bit lower than this figure, don't state it as a certain, exact number."
+        ),
         "parameters": {"type": "object", "properties": {
             "period": {"type": "string", "enum": ["today", "this_week", "this_month", "custom"]},
             "start_date": {"type": "string"}, "end_date": {"type": "string"},
@@ -196,7 +227,7 @@ TOOLS = [
     }},
     {"type": "function", "function": {
         "name": "get_inventory",
-        "description": "Current stock levels, everything, or one specific item by name.",
+        "description": "Current stock levels, selling price, buying price, and margin, everything or one specific item by name. Use this to answer any margin/profit-per-item question (e.g. \"what's my margin on shoes\"). margin_amount/margin_percent are null when buying_price isn't on file, say so plainly rather than guessing.",
         "parameters": {"type": "object", "properties": {"item_name": {"type": "string"}}},
     }},
     {"type": "function", "function": {
@@ -358,9 +389,9 @@ async def _create_proposal(db: AsyncSession, user: User, function_name: str, pay
 
 def _classify_reply(text: str) -> str:
     t = text.strip()
-    if AFFIRMATIVE_RE.match(t):
+    if _word_classify(t, _AFFIRMATIVE_CORE, _AFFIRMATIVE_FILLER):
         return "yes"
-    if NEGATIVE_RE.match(t):
+    if _word_classify(t, _NEGATIVE_CORE, _NEGATIVE_FILLER):
         return "no"
     return "other"
 
@@ -859,8 +890,17 @@ class ChatEngine:
         desc = ", ".join(li["product_name"] for li in line_items)
         first_item_id = None
 
+        # Cost of goods sold is snapshotted HERE, at the moment of sale, not looked up live from
+        # the item's current buying_price later -- a price change afterward must never rewrite a
+        # past sale's recorded margin. Summed across every line item, not just the first, so a
+        # multi-product sale's COGS is the real total, not just one item's -- known incomplete
+        # (never silently zero) if any line item wasn't matched to a real product or has no
+        # buying_price on file.
+        cost_of_goods = Decimal(0)
+        cogs_complete = True
         for li in line_items:
             if not li.get("item_id"):
+                cogs_complete = False
                 continue
             item_stmt = select(Item).where(Item.id == uuid.UUID(li["item_id"]))
             item = (await db.execute(item_stmt)).scalars().first()
@@ -868,11 +908,18 @@ class ChatEngine:
                 item.stock_level = (item.stock_level or Decimal(0)) - Decimal(str(li["quantity"]))
             if first_item_id is None:
                 first_item_id = item.id if item else None
+            if item and item.buying_price is not None:
+                cost_of_goods += item.buying_price * Decimal(str(li["quantity"]))
+            elif item and item.is_service:
+                pass  # a service has no cost of goods by definition, doesn't count as "unknown"
+            else:
+                cogs_complete = False
 
         transaction = Transaction(
             user_id=user.id, business_id=business_id, item_id=first_item_id,
             type=TransactionType.SALE, amount=total, currency=user.currency,
             description=desc, category="Sales Revenue", quantity=Decimal(str(line_items[0]["quantity"])),
+            cost_of_goods=cost_of_goods, cost_of_goods_complete=cogs_complete,
         )
         db.add(transaction)
 
@@ -985,12 +1032,13 @@ class ChatEngine:
             now = datetime.utcnow()
             period = args.get("period", "today")
             start, end = self._bounds(period, now, args.get("start_date"), args.get("end_date"))
-            total_sales = await self._sum_by_type(db, business_id, TransactionType.SALE, start, end)
-            total_expenses = await self._sum_by_type(db, business_id, TransactionType.EXPENSE, start, end)
+            fin = await calculate_period_financials(db, business_id, start, end)
             return {
                 "period": period, "currency": user.currency,
-                "total_sales": float(total_sales), "total_expenses": float(total_expenses),
-                "net_profit": float(total_sales - total_expenses),
+                "total_sales": float(fin.total_sales), "total_expenses": float(fin.total_expenses),
+                "cost_of_goods_sold": float(fin.cost_of_goods),
+                "net_profit": float(fin.net_profit),
+                "cogs_known_complete": fin.cogs_known_complete,
             }
         if name == "get_recent_activity":
             days = args.get("days") or 7
@@ -1011,7 +1059,18 @@ class ChatEngine:
             if item_name:
                 stmt = stmt.where(Item.name.ilike(f"%{item_name}%"))
             rows = (await db.execute(stmt)).scalars().all()
-            return {"items": [{"name": i.name, "stock_level": float(i.stock_level or 0), "unit_price": float(i.unit_price or 0)} for i in rows]}
+            items = []
+            for i in rows:
+                selling = float(i.unit_price) if i.unit_price is not None else None
+                buying = float(i.buying_price) if i.buying_price is not None else None
+                margin_amount = (selling - buying) if (selling is not None and buying is not None) else None
+                margin_percent = (margin_amount / selling * 100) if (margin_amount is not None and selling) else None
+                items.append({
+                    "name": i.name, "stock_level": float(i.stock_level or 0),
+                    "unit_price": selling or 0.0, "buying_price": buying,
+                    "margin_amount": margin_amount, "margin_percent": margin_percent,
+                })
+            return {"items": items}
         # list_low_stock
         stmt = select(Item).where(Item.business_id == business_id, Item.stock_level > 0, Item.stock_level <= LOW_STOCK_THRESHOLD)
         rows = (await db.execute(stmt)).scalars().all()
@@ -1030,13 +1089,6 @@ class ChatEngine:
         if period == "this_month":
             return now - timedelta(days=30), now
         return now.replace(hour=0, minute=0, second=0, microsecond=0), now
-
-    async def _sum_by_type(self, db: AsyncSession, business_id, tx_type: TransactionType, start: datetime, end: datetime) -> Decimal:
-        stmt = select(func.sum(Transaction.amount)).where(
-            Transaction.business_id == business_id, Transaction.type == tx_type,
-            Transaction.transaction_date >= start, Transaction.transaction_date <= end,
-        )
-        return (await db.execute(stmt)).scalar() or Decimal(0)
 
     def _plain_fallback(self, result: Optional[Dict[str, Any]]) -> str:
         if not result:
@@ -1057,10 +1109,12 @@ class ChatEngine:
                 return "No recent activity to show."
             return f"You've had {len(items)} recent transaction(s)."
         if "total_sales" in result:
+            caveat = "" if result.get("cogs_known_complete", True) else " (some sold items don't have a buying price on file yet, so actual profit may be a bit lower)"
             return (
                 f"For {result['period']}: sales {result['currency']} {result['total_sales']:,.0f}, "
+                f"cost of goods {result['currency']} {result.get('cost_of_goods_sold', 0):,.0f}, "
                 f"expenses {result['currency']} {result['total_expenses']:,.0f}, "
-                f"profit {result['currency']} {result['net_profit']:,.0f}."
+                f"profit {result['currency']} {result['net_profit']:,.0f}.{caveat}"
             )
         return "Sorry, I couldn't find an answer to that, could you rephrase?"
 

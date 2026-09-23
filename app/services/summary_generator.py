@@ -77,19 +77,26 @@ class SummaryGenerator:
         if not transactions:
             return # Skip users with no activity
         
-        # Calculate totals
-        total_sales = sum(t.amount for t in transactions if t.type == TransactionType.SALE)
+        # Calculate totals. net_profit subtracts cost of goods sold, not just expenses -- see
+        # app/services/financials.py for why (confirmed 2026-09-23: it wasn't being subtracted
+        # anywhere in the app, overstating profit for every sale of a priced product).
+        sales = [t for t in transactions if t.type == TransactionType.SALE]
+        total_sales = sum(t.amount for t in sales)
         total_expenses = sum(t.amount for t in transactions if t.type == TransactionType.EXPENSE)
-        sale_count = sum(1 for t in transactions if t.type == TransactionType.SALE)
-        
+        cost_of_goods = sum((t.cost_of_goods or 0) for t in sales)
+        cogs_known_complete = all(t.cost_of_goods is not None and t.cost_of_goods_complete is not False for t in sales)
+        sale_count = len(sales)
+
         # Prepare data for AI
         data = {
             "business_name": user.business_name,
             "currency": user.currency,
             "total_sales": float(total_sales),
             "total_expenses": float(total_expenses),
+            "cost_of_goods_sold": float(cost_of_goods),
             "sale_count": sale_count,
-            "net_profit": float(total_sales - total_expenses),
+            "net_profit": float(total_sales - cost_of_goods - total_expenses),
+            "cogs_known_complete": cogs_known_complete,
             "transaction_count": len(transactions),
             "period": summary_type.value
         }
@@ -109,23 +116,26 @@ class SummaryGenerator:
         await db.commit()
 
     async def _get_ai_summary(self, data: dict) -> str:
+        caveat = "" if data.get("cogs_known_complete", True) else " (some sold items don't have a buying price on file yet, so actual profit may be a bit lower)"
         fallback = (
             f"You made {data['sale_count']} sales totaling {data['currency']} {data['total_sales']:,}. "
             f"Your expenses were {data['currency']} {data['total_expenses']:,}. "
-            f"Your profit was {data['currency']} {data['net_profit']:,}."
+            f"Your profit was {data['currency']} {data['net_profit']:,}.{caveat}"
         )
         if not ai_client.is_available:
             return fallback
 
+        cogs_note = "" if data.get("cogs_known_complete", True) else "\n        - Note: some sold items have no buying price on file, so mention plainly that real profit could be a bit lower than this figure, don't state it as exact."
         prompt = f"""
         You are a business coach for 'Ozzy for Business', helping small business owners in Africa.
         Generate a {data['period']} summary for {data['business_name'] or 'the business'}.
-        
+
         Data:
         - Total Sales: {data['currency']} {data['total_sales']:,} ({data['sale_count']} sales)
+        - Cost of Goods Sold: {data['currency']} {data.get('cost_of_goods_sold', 0):,}
         - Total Expenses: {data['currency']} {data['total_expenses']:,}
-        - Net Profit: {data['currency']} {data['net_profit']:,}
-        
+        - Net Profit: {data['currency']} {data['net_profit']:,}{cogs_note}
+
         Write a 2-sentence summary in plain, encouraging language. Mention the profit clearly.
         If it's a daily summary, start with "Today..." or "Yesterday...".
         """

@@ -27,9 +27,13 @@ class ExpenseBreakdown(BaseModel):
 class PNLReport(BaseModel):
     total_revenue: Decimal
     revenue_breakdown: List[RevenueBreakdown]
+    cost_of_goods_sold: Decimal = Decimal(0)
     total_expenses: Decimal
     expense_breakdown: List[ExpenseBreakdown]
     net_profit: Decimal
+    # False if any sold item in this period has no buying price on file -- net_profit is then a
+    # known lower-bound estimate, never silently presented as exact. See app/services/financials.py.
+    cogs_known_complete: bool = True
     currency: str
     start_date: datetime
     end_date: datetime
@@ -90,7 +94,11 @@ class ReportDashboard(BaseModel):
     currency: str
     total_sales: Decimal
     total_expenses: Decimal
+    cost_of_goods_sold: Decimal = Decimal(0)
     net_profit: Decimal
+    # False if any sold item in this period has no buying price on file -- net_profit is then a
+    # known lower-bound estimate, never silently presented as exact. See app/services/financials.py.
+    cogs_known_complete: bool = True
     sales_change_pct: Optional[float] = None
     expenses_change_pct: Optional[float] = None
     daily: List[DailyPoint]

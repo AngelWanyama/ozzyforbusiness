@@ -6,7 +6,8 @@ from decimal import Decimal
 class ItemBase(BaseModel):
     name: str
     category: Optional[str] = None
-    unit_price: Optional[Decimal] = None
+    unit_price: Optional[Decimal] = None  # selling price
+    buying_price: Optional[Decimal] = None  # cost price, needed to ever calculate real profit
     stock_level: Decimal = 0
     is_service: bool = False
 
@@ -17,6 +18,7 @@ class ItemUpdate(BaseModel):
     name: Optional[str] = None
     category: Optional[str] = None
     unit_price: Optional[Decimal] = None
+    buying_price: Optional[Decimal] = None
     stock_level: Optional[Decimal] = None
     is_service: Optional[bool] = None
 

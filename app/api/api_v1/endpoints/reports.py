@@ -9,6 +9,7 @@ from app.models.user import User
 from app.models.transaction import Transaction, TransactionType
 from app.schemas.transaction import SummaryReport
 from app.schemas.report import ReportDashboard, DailyPoint, CategorySlice, BestSeller
+from app.services.financials import calculate_period_financials
 
 router = APIRouter()
 
@@ -58,26 +59,16 @@ async def get_summary(
     # (should not happen post Stage A backfill, but keeps this endpoint safe).
     effective_business_id = current_user.business_id or current_user.id
 
-    # Sum sales
-    sales_stmt = select(func.sum(Transaction.amount)).where(
-        Transaction.business_id == effective_business_id,
-        Transaction.type == TransactionType.SALE
-    )
-    sales_result = await db.execute(sales_stmt)
-    total_sales = sales_result.scalar() or Decimal(0)
-
-    # Sum expenses
-    expenses_stmt = select(func.sum(Transaction.amount)).where(
-        Transaction.business_id == effective_business_id,
-        Transaction.type == TransactionType.EXPENSE
-    )
-    expenses_result = await db.execute(expenses_stmt)
-    total_expenses = expenses_result.scalar() or Decimal(0)
+    # All-time summary, so the window is "everything up to now" -- matches the previous
+    # behaviour, which had no date filter at all.
+    fin = await calculate_period_financials(db, effective_business_id, datetime.min, datetime.utcnow())
 
     return {
-        "total_sales": total_sales,
-        "total_expenses": total_expenses,
-        "net_profit": total_sales - total_expenses,
+        "total_sales": fin.total_sales,
+        "total_expenses": fin.total_expenses,
+        "cost_of_goods_sold": fin.cost_of_goods,
+        "net_profit": fin.net_profit,
+        "cogs_known_complete": fin.cogs_known_complete,
         "currency": current_user.currency
     }
 
@@ -92,8 +83,7 @@ async def get_dashboard(
     now = datetime.utcnow()
     cur_start, cur_end, prev_start, prev_end = _period_bounds(period, now)
 
-    total_sales = await _sum_by_type(db, effective_business_id, TransactionType.SALE, cur_start, cur_end)
-    total_expenses = await _sum_by_type(db, effective_business_id, TransactionType.EXPENSE, cur_start, cur_end)
+    fin = await calculate_period_financials(db, effective_business_id, cur_start, cur_end)
     prev_sales = await _sum_by_type(db, effective_business_id, TransactionType.SALE, prev_start, prev_end)
     prev_expenses = await _sum_by_type(db, effective_business_id, TransactionType.EXPENSE, prev_start, prev_end)
 
@@ -150,11 +140,13 @@ async def get_dashboard(
     return ReportDashboard(
         period=period,
         currency=current_user.currency,
-        total_sales=total_sales,
-        total_expenses=total_expenses,
-        net_profit=total_sales - total_expenses,
-        sales_change_pct=_pct_change(total_sales, prev_sales),
-        expenses_change_pct=_pct_change(total_expenses, prev_expenses),
+        total_sales=fin.total_sales,
+        total_expenses=fin.total_expenses,
+        cost_of_goods_sold=fin.cost_of_goods,
+        net_profit=fin.net_profit,
+        cogs_known_complete=fin.cogs_known_complete,
+        sales_change_pct=_pct_change(fin.total_sales, prev_sales),
+        expenses_change_pct=_pct_change(fin.total_expenses, prev_expenses),
         daily=daily,
         category_breakdown=category_breakdown,
         best_sellers=best_sellers,

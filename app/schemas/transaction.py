@@ -32,5 +32,9 @@ class TransactionHistory(BaseModel):
 class SummaryReport(BaseModel):
     total_sales: Decimal
     total_expenses: Decimal
+    cost_of_goods_sold: Decimal = Decimal(0)
     net_profit: Decimal
+    # False if any sold item in this period has no buying price on file -- net_profit is then a
+    # known lower-bound estimate, never silently presented as exact. See app/services/financials.py.
+    cogs_known_complete: bool = True
     currency: str = "UGX"

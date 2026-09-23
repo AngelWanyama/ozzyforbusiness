@@ -7,6 +7,7 @@ from app.models.transaction import Transaction, TransactionType
 from app.models.invoice import Invoice
 from app.models.item import Item
 from app.models.user import User
+from app.services.financials import calculate_period_financials, cogs_caveat
 
 # Uganda runs on East Africa Time (UTC+3, no daylight saving), everything in this app is
 # stored as naive UTC, so greetings are computed in EAT just for the purposes of deciding
@@ -175,12 +176,15 @@ async def get_greeting(db: AsyncSession, user: User) -> Dict[str, Any]:
     if time_of_day == "morning":
         yesterday_sale_count = await _count_transactions(db, business_id, TransactionType.SALE, yesterday_start_utc, today_start_utc)
         low_stock_line = f" You're running low on {low_stock_items[0]}." if low_stock_items else ""
+        # "Profit" here used to be sales minus expenses with cost of goods sold never
+        # subtracted -- see app/services/financials.py.
+        yesterday_fin = await calculate_period_financials(db, business_id, yesterday_start_utc, today_start_utc)
         return {
             "scenario": "morning",
             "text": (
                 f"☀️ Good morning, {name}. Yesterday you made {_fmt(currency, yesterday_sales)} from "
                 f"{yesterday_sale_count} sale{'s' if yesterday_sale_count != 1 else ''}. Your profit was "
-                f"{_fmt(currency, yesterday_sales - yesterday_expenses)}.{low_stock_line} What would you like to do today?"
+                f"{_fmt(currency, yesterday_fin.net_profit)}.{cogs_caveat(yesterday_fin)}{low_stock_line} What would you like to do today?"
             ),
             "chips": ["Record a sale", "Check stock", "View yesterday", "Create an invoice"],
         }
@@ -198,8 +202,9 @@ async def get_greeting(db: AsyncSession, user: User) -> Dict[str, Any]:
             "chips": ["Record a sale", "Record an expense", "Create an invoice"],
         }
 
+    today_fin = await calculate_period_financials(db, business_id, today_start_utc, now_utc)
     return {
         "scenario": "evening",
-        "text": f"🌙 Good evening, {name}. Here's how today went. Sales: {_fmt(currency, today_sales)}. Expenses: {_fmt(currency, today_expenses)}. Profit: {_fmt(currency, today_sales - today_expenses)}. Nice work today. What would you like to do before you close?",
+        "text": f"🌙 Good evening, {name}. Here's how today went. Sales: {_fmt(currency, today_sales)}. Expenses: {_fmt(currency, today_expenses)}. Profit: {_fmt(currency, today_fin.net_profit)}.{cogs_caveat(today_fin)} Nice work today. What would you like to do before you close?",
         "chips": ["View today's activity", "Create a report", "Check stock"],
     }

@@ -15,6 +15,7 @@ from app.schemas.report import (
     ExpenseBreakdown, AssetBreakdown, LiabilityBreakdown
 )
 from app.services.ai_client import ai_client
+from app.services.financials import calculate_period_financials
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 from reportlab.lib import colors
@@ -74,12 +75,15 @@ class ReportEngineService:
             ExpenseBreakdown(category=k, amount=v) for k, v in expense_map.items()
         ]
 
+        fin = await calculate_period_financials(db, effective_business_id, start_date, end_date)
         return PNLReport(
             total_revenue=total_revenue,
             revenue_breakdown=revenue_breakdown,
+            cost_of_goods_sold=fin.cost_of_goods,
             total_expenses=total_expenses,
             expense_breakdown=expense_breakdown,
-            net_profit=total_revenue - total_expenses,
+            net_profit=total_revenue - fin.cost_of_goods - total_expenses,
+            cogs_known_complete=fin.cogs_known_complete,
             currency=user.currency,
             start_date=start_date,
             end_date=end_date
