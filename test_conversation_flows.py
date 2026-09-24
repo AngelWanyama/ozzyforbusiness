@@ -412,6 +412,12 @@ async def test_chat_sales(client, headers):
         r = await client.post("/api/v1/chat/process", json={"text": "yes"}, headers=headers)
         d = r.json()
         print("  reply (after confirming add-product):", d)
+    # 2026-09-23 bug 8 fix: adding a brand-new product now asks for its buying price before the
+    # sale finalizes, so this step may need answering before a total is available at all.
+    if "how much did you buy" in (d.get("reply") or "").lower():
+        r = await client.post("/api/v1/chat/process", json={"text": "20000"}, headers=headers)
+        d = r.json()
+        print("  reply (after giving buying price):", d)
     # Either a confirm_sale card, or the deterministic add-product-then-resume reply text, both
     # are correct outcomes here -- what matters is the total is right either way.
     amount_ok = (d.get("draft") or {}).get("amount") == 60000 or "60,000" in (d.get("reply") or "")
@@ -442,6 +448,160 @@ async def test_chat_sales(client, headers):
         d["action"] == "reply" and d.get("proposal_id") is None and "each" in (d.get("reply") or "").lower(),
         d,
     )
+
+
+async def test_offtopic_detour_preserves_pending_sale(client):
+    """Bug 10, CRITICAL, 2026-09-23: a pending sale/product proposal got completely forgotten
+    the moment the conversation went off-topic even briefly, including Ozzy flatly denying one
+    was pending when asked directly. A pending proposal must survive an off-topic detour and
+    never be denied when it's real."""
+    print("\n=== CHAT: pending proposal survives an off-topic detour ===")
+    phone = "+256700000970"
+    await cleanup(phone)
+    token = await register(client, phone)
+    headers = {"Authorization": f"Bearer {token}"}
+    await client.patch("/api/v1/users/me", json={"business_name": "Test Co", "currency": "UGX"}, headers=headers)
+
+    r = await client.post("/api/v1/chat/process", json={"text": "sold 1 pair of shoes at 50000"}, headers=headers)
+    d = r.json()
+    print("  proposal reply:", d)
+    check("a new-product sale gets a pending proposal", bool(d.get("proposal_id")), d)
+
+    r = await client.post("/api/v1/chat/process", json={"text": "this app is annoying me today"}, headers=headers)
+    d = r.json()
+    print("  off-topic detour reply:", d)
+
+    r = await client.post("/api/v1/chat/process", json={"text": "do you have a pending transaction?"}, headers=headers)
+    d = r.json()
+    reply = (d.get("reply") or "").lower()
+    print("  asked directly:", reply)
+    check("does not falsely deny a real pending proposal", "no pending" not in reply and "don't have any pending" not in reply and "nothing pending" not in reply, reply)
+    check("correctly confirms the pending proposal is still there", "yes" in reply or "shoes" in reply or "pending" in reply, reply)
+    await cleanup(phone)
+
+
+async def test_yes_please_confirms_add_product_sale(client):
+    """Bug 9, 2026-09-23: typed "Yes please" confirming a pending add-product-and-record-sale
+    proposal wasn't recognized, Ozzy asked for "more detail" instead. Also verifies the bug 9
+    redundant-proposal fix: this must resolve in one clean step, not spawn a second, separate
+    "Add X to your products?" confirmation that loses track of the sale."""
+    print("\n=== CHAT: 'Yes please' cleanly confirms an add-product-then-sale proposal ===")
+    phone = "+256700000971"
+    await cleanup(phone)
+    token = await register(client, phone)
+    headers = {"Authorization": f"Bearer {token}"}
+    await client.patch("/api/v1/users/me", json={"business_name": "Test Co", "currency": "UGX"}, headers=headers)
+
+    r = await client.post("/api/v1/chat/process", json={"text": "sold 1 pair of shoes at 50000"}, headers=headers)
+    d = r.json()
+    print("  proposal reply:", d)
+
+    r = await client.post("/api/v1/chat/process", json={"text": "Yes please"}, headers=headers)
+    d = r.json()
+    print("  'Yes please' reply:", d)
+    reply = (d.get("reply") or "").lower()
+    check(
+        "'Yes please' is recognized as confirmation, not treated as unclear",
+        "more detail" not in reply and "could you let me know what you want" not in reply,
+        reply,
+    )
+    check(
+        "does not spawn a second, separate 'add to products?' confirmation for the same item",
+        "add \"shoes\" to your products?" not in reply and "want me to add it?" not in reply,
+        reply,
+    )
+    await cleanup(phone)
+
+
+async def test_new_product_prompts_for_buying_price(client):
+    """Bug 8, CRITICAL, 2026-09-23: a brand-new product added mid-sale never had its buying
+    price asked, so profit could never be calculated for anything added this way."""
+    print("\n=== CHAT: a new product added mid-sale prompts for buying price ===")
+    phone = "+256700000972"
+    await cleanup(phone)
+    token = await register(client, phone)
+    headers = {"Authorization": f"Bearer {token}"}
+    await client.patch("/api/v1/users/me", json={"business_name": "Test Co", "currency": "UGX"}, headers=headers)
+
+    r = await client.post("/api/v1/chat/process", json={"text": "sold 1 pair of shoes at 50000"}, headers=headers)
+    r2 = await client.post("/api/v1/chat/process", json={"text": "yes"}, headers=headers)
+    d = r2.json()
+    print("  reply after confirming add-product:", d)
+    reply = (d.get("reply") or "").lower()
+    check(
+        "asks for the buying price in plain, friendly language, not a bare form field",
+        "how much did you buy" in reply and "shoes" in reply,
+        reply,
+    )
+    check("still explains the reason (working out profit), not just a bare request for a number", "profit" in reply, reply)
+
+    r = await client.post("/api/v1/chat/process", json={"text": "15000"}, headers=headers)
+    d = r.json()
+    print("  reply after giving buying price:", d)
+    check("resumes into the sale confirmation once the buying price is given", d.get("action") == "confirm" and d.get("proposal_id"), d)
+    if d.get("proposal_id"):
+        await client.post("/api/v1/chat/confirm", json={"proposal_id": d["proposal_id"]}, headers=headers)
+
+    import sqlite3
+    con = sqlite3.connect("ozzy.db")
+    row = con.execute(
+        "SELECT buying_price, unit_price FROM items WHERE user_id = (SELECT id FROM users WHERE phone_number = ?) AND name LIKE '%shoes%'",
+        (phone,),
+    ).fetchone()
+    con.close()
+    print("  item buying_price/unit_price:", row)
+    check("the buying price actually got saved onto the product", row is not None and float(row[0]) == 15000, row)
+    await cleanup(phone)
+
+
+async def test_business_name_change_requires_confirmation(client):
+    """Bug 3, CRITICAL, 2026-09-23: business name got silently overwritten mid-chat, twice in
+    one conversation, with zero confirmation step. Deliberately overrides Volume 4's original
+    L1/instant-apply design for business name/type -- see chat_engine.py's PROPOSAL_FUNCTIONS."""
+    print("\n=== CHAT: business name change requires explicit confirmation ===")
+    phone = "+256700000973"
+    await cleanup(phone)
+    token = await register(client, phone)
+    headers = {"Authorization": f"Bearer {token}"}
+    await client.patch("/api/v1/users/me", json={"business_name": "Old Name Co", "currency": "UGX"}, headers=headers)
+
+    r = await client.post("/api/v1/chat/process", json={"text": "change my business name to Rinah Fashions"}, headers=headers)
+    d = r.json()
+    print("  reply:", d)
+    check("business name change is proposed with a confirm button, not applied instantly", d.get("action") == "confirm" and bool(d.get("proposal_id")), d)
+
+    r = await client.get("/api/v1/users/me", headers=headers)
+    check("business name is NOT changed before confirmation", r.json().get("business_name") == "Old Name Co", r.json())
+
+    if d.get("proposal_id"):
+        await client.post("/api/v1/chat/confirm", json={"proposal_id": d["proposal_id"]}, headers=headers)
+    r = await client.get("/api/v1/users/me", headers=headers)
+    check("business name changes only after explicit confirmation", r.json().get("business_name") == "Rinah Fashions", r.json())
+    await cleanup(phone)
+
+
+async def test_single_service_not_treated_as_ambiguous(client):
+    """Bug 5, 2026-09-23: a fully complete answer (service name, price, and a clear instruction
+    to record it, all in one message) got treated as incomplete and the user was asked to
+    repeat everything -- a singular, unnumbered mention was wrongly flagged as ambiguous
+    total-vs-each pricing when there was only ever one possible reading."""
+    print("\n=== CHAT: a single implied-quantity service is never treated as ambiguous ===")
+    phone = "+256700000974"
+    await cleanup(phone)
+    token = await register(client, phone)
+    headers = {"Authorization": f"Bearer {token}"}
+    await client.patch("/api/v1/users/me", json={"business_name": "Test Co", "currency": "UGX"}, headers=headers)
+
+    r = await client.post("/api/v1/chat/process", json={"text": "Haircut for 20000, please record it"}, headers=headers)
+    d = r.json()
+    print("  reply:", d)
+    reply = (d.get("reply") or "").lower()
+    check(
+        "a single service with a clear price is never asked total-vs-each",
+        "each" not in reply and "per haircut" not in reply,
+        reply,
+    )
+    await cleanup(phone)
 
 
 async def test_cogs_profit_calculation(client):
@@ -547,6 +707,12 @@ async def main():
         await client.patch("/api/v1/users/me", json={"business_name": "Test Co", "currency": "UGX"}, headers=headers)
         await test_chat_sales(client, headers)
         await cleanup(phone)
+
+        await test_offtopic_detour_preserves_pending_sale(client)
+        await test_yes_please_confirms_add_product_sale(client)
+        await test_new_product_prompts_for_buying_price(client)
+        await test_business_name_change_requires_confirmation(client)
+        await test_single_service_not_treated_as_ambiguous(client)
 
         await test_cogs_profit_calculation(client)
         await test_cogs_unknown_buying_price_is_honest(client)

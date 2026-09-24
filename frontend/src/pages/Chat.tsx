@@ -460,6 +460,10 @@ export default function Chat() {
 
   const toggleRecording = () => { if (recording) stopRecording(); else startRecording(); };
 
+  // Dictate-then-review (2026-09-23): a misheard accent once got committed straight into a real
+  // reply, in Swahili, with no chance to catch it first. Voice now only fills the text box for
+  // the entrepreneur to check and edit before sending, exactly like typing, removing the failure
+  // mode entirely instead of trying to detect a bad transcription after the fact.
   const sendVoice = async (blob: Blob) => {
     setTranscribing(true);
     try {
@@ -477,8 +481,8 @@ export default function Chat() {
         push({ role: 'ozzy', kind: 'text', text: data.detail || "Sorry, I couldn't hear that clearly. Please try again." });
         return;
       }
-      push({ role: 'user', kind: 'text', text: data.transcript });
-      applyChatResult(data, data.transcript);
+      setInput(prev => (prev ? `${prev} ${data.transcript}` : data.transcript));
+      document.getElementById('chat-input')?.focus();
     } catch {
       push({ role: 'ozzy', kind: 'text', text: "Sorry, something went wrong sending your recording. Please try again." });
     } finally {

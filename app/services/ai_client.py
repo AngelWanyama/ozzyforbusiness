@@ -18,7 +18,7 @@ fallback once a real OPENAI_API_KEY is set. OpenAI always wins if both keys are 
 """
 import logging
 from typing import Optional
-from openai import OpenAI
+from openai import OpenAI, APIConnectionError
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -102,12 +102,17 @@ class AIClient:
         message (with .content and .tool_calls), or None if unconfigured/on failure — callers
         should treat a tool-call round and a plain-text round the same way at this layer.
 
-        Retries once on a connection-level failure (e.g. a brief network drop reaching the
-        OpenAI API) before giving up -- confirmed live 2026-09-22: a real user's message
-        ("I sale ladies clothes") never reached the model at all because of exactly this kind of
-        transient connection error, and the caller had no way to tell "the network hiccuped"
-        apart from "the model couldn't understand this", surfacing a confusing generic failure
-        for what was actually a one-off connectivity blip, not a comprehension problem.
+        Retries once on a transient network-level failure (a connection drop OR a timeout)
+        before giving up. Confirmed live 2026-09-22 and again 2026-09-23: real messages never
+        reached the model because of exactly this, surfacing a confusing generic failure for
+        what was actually a one-off connectivity blip, not a comprehension problem. The
+        2026-09-22 fix only matched "Connection" in the exception's type name or text, which
+        missed openai.APITimeoutError ("Request timed out.") entirely, confirmed in the server
+        log as the actual failure behind that night's "apostrophe" reports (business names with
+        apostrophes were a coincidence -- the SDK escapes them into the request body exactly
+        like any other JSON string, they were never the real cause). APITimeoutError is a
+        subclass of APIConnectionError, so catching that one class covers both by construction
+        instead of pattern-matching exception text.
         """
         if not self._client:
             return None
@@ -123,11 +128,13 @@ class AIClient:
                     **kwargs,
                 )
                 return response.choices[0].message
-            except Exception as e:
-                is_connection_error = "Connection" in type(e).__name__ or "Connection" in str(e)
-                if attempt == 0 and is_connection_error:
-                    logger.warning(f"AI chat call hit a connection error ({self._provider}), retrying once: {e}")
+            except APIConnectionError as e:
+                if attempt == 0:
+                    logger.warning(f"AI chat call hit a connection/timeout error ({self._provider}), retrying once: {e}")
                     continue
+                logger.error(f"AI chat call failed ({self._provider}): {e}")
+                return None
+            except Exception as e:
                 logger.error(f"AI chat call failed ({self._provider}): {e}")
                 return None
 

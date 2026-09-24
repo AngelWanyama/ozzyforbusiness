@@ -51,12 +51,19 @@ OWNER_ONLY_FUNCTIONS = {
 
 # Functions that write nothing on the model's PROPOSE turn, they compute a preview, get stored
 # as a ChatProposal, and only take effect once a real confirmation message passes the check in
-# handle_message. update_profile_field is deliberately absent: Volume 4 makes it L1, instant
-# apply with a same-session undo, not a PROPOSE/COMMIT action.
+# handle_message.
+#
+# update_profile_field was deliberately L1 (instant apply, same-session undo) per Volume 4 --
+# confirmed live 2026-09-23 that this is a real problem in practice, not just on paper: the
+# business name got silently overwritten mid-chat, twice in one conversation, with no
+# confirmation step at all. Deliberately overriding the documented Volume 4 design here: a
+# business's own name/type is exactly the kind of consequential change that must never happen
+# without an explicit yes, so this is now PROPOSE/COMMIT like everything else, not instant.
 PROPOSAL_FUNCTIONS = {
     "propose_sale", "propose_expense", "add_product", "mark_customer_paid",
     "generate_document_preview", "propose_currency_change",
     "generate_worker_invite", "propose_remove_worker", "mark_document_paid",
+    "update_profile_field",
 }
 
 READ_ONLY_FUNCTIONS = {"get_report_summary", "get_recent_activity", "get_inventory", "list_low_stock"}
@@ -65,7 +72,16 @@ READ_ONLY_FUNCTIONS = {"get_report_summary", "get_recent_activity", "get_invento
 # amount, or waiting on a new product) is never auto-committable, a "yes" here answers a
 # clarifying question, not "record this", so it must always go back through the model with
 # full context rather than straight to a commit_* handler.
-INCOMPLETE_PROPOSAL_FUNCTIONS = {"propose_sale_incomplete", "propose_expense_incomplete"}
+INCOMPLETE_PROPOSAL_FUNCTIONS = {"propose_sale_incomplete", "propose_expense_incomplete", "propose_sale_awaiting_buying_price"}
+
+_SINGLE_NUMBER_RE = re.compile(r"[\d][\d,]*(?:\.\d+)?")
+
+
+def _parse_single_number(text: str) -> Optional[float]:
+    nums = _SINGLE_NUMBER_RE.findall(text)
+    if len(nums) == 1:
+        return float(nums[0].replace(",", ""))
+    return None
 
 
 # Confirmed live 2026-09-23: a rigid "the whole message must be exactly one of these words"
@@ -110,10 +126,17 @@ TOOLS = [
             "like 'total', 'altogether', or 'in all' (e.g. '2 dresses for a total of 60000' clearly means "
             "line_total=60000), OR quantity is 1. In all of these, set unit_price or line_total directly and "
             "call this function, do not ask anything.\n"
+            "QUANTITY IS 1 covers a singular, unnumbered mention too, not just a literal '1 x': "
+            "'Haircut for 20000' or 'sold a dress for 30000' both mean exactly one item/service at "
+            "that price, quantity=1, unit_price=line_total=the number given -- there is only ONE "
+            "possible reading (total and unit price are mathematically identical when quantity is "
+            "1), so this is NEVER ambiguous, call this function immediately, do not ask which. This "
+            "applies just as much to a service as a product.\n"
             "PRICE WORDING IS GENUINELY AMBIGUOUS, do NOT call this, ask a plain-text clarifying question "
-            "instead, only when quantity is more than 1 AND a single price was given with NEITHER of those "
-            "words (e.g. bare '2 sodas for 6000', ask 'Is that 6,000 total, or 6,000 each?'). Do not invent "
-            "this ambiguity when the wording already answers it."
+            "instead, ONLY when quantity is explicitly 2 or more (a plural or a real number, not an implied "
+            "singular) AND a single price was given with NEITHER of the words above (e.g. bare '2 sodas for "
+            "6000', ask 'Is that 6,000 total, or 6,000 each?'). Do not invent this ambiguity when the "
+            "wording already answers it, or when there was only ever one item/service to begin with."
         ),
         "parameters": {"type": "object", "properties": {
             "line_items": {"type": "array", "items": {"type": "object", "properties": {
@@ -243,19 +266,29 @@ TOOLS = [
 
 def _identity_block() -> str:
     return (
-        "IDENTITY: You are Ozzy, competent, honest, calm, supportive, direct, respectful. "
-        "Your core promise is managing a business as simply as chatting with someone who already "
-        "understands it. The only approved way to describe what you do is \"AI-powered financial "
-        "management\" — never say \"bookkeeping\" or \"accounting\", in any form, ever. Never open "
-        "with a generic \"How can I help?\". Speak in plain, warm, everyday language, never robotic "
-        "or formal. Never use an em dash (—) in anything you write — use a comma, a period, or "
-        "start a new sentence instead. Understand typos, shorthand, and casual phrasing the way a "
-        "person reading a text message naturally would (\"slodd\" means \"sold\"; \"60k\" means "
-        "60,000). Only help with things related to this business: sales, expenses, stock, invoices, "
-        "receipts, workers, and how the business is doing. Politely redirect anything unrelated. "
-        "AIRTIME & FLOAT: judge the direction of money, not just the word \"airtime\". Buying, "
-        "topping up, or restocking airtime or float (money OUT) is an expense. Selling airtime to a "
-        "customer (money IN) is a sale."
+        "IDENTITY: You are Ozzy, competent, honest, calm, supportive, direct, respectful. Talk "
+        "like a sharp, trustworthy friend who happens to know this business well, not a bank "
+        "agent, not an accountant, not customer support. A real friend doesn't say \"I hear you\" "
+        "or \"feel free to share\" or open a sentence with \"I understand that...\", they just "
+        "respond like a person. When stating numbers (sales, profit, cost of goods), say them "
+        "plainly, e.g. \"You made 30,000 today. Shoes cost you 15,000, so you kept 15,000.\" not "
+        "\"Your total sales were X, and after accounting for cost of goods sold, net profit is Y\" "
+        "-- that reads like a statement, not a conversation, and never use the word \"accounting\" "
+        "in any form, including as an ordinary verb (\"accounting for\"), see the banned-word rule "
+        "below. Your core promise is managing a business as simply as chatting with someone who "
+        "already understands it. The only approved way to describe what you do is \"AI-powered "
+        "financial management\" — never say \"bookkeeping\" or \"accounting\", in any form, ever. "
+        "Never open with a generic \"How can I help?\". Speak in plain, warm, everyday language, "
+        "never robotic or formal. Never use an idiom, metaphor, or figure of speech that assumes "
+        "native English fluency (no \"leaving money on the table\", no \"the ball is in your "
+        "court\") -- say the literal thing directly instead. Never use an em dash (—) in anything "
+        "you write — use a comma, a period, or start a new sentence instead. Understand typos, "
+        "shorthand, and casual phrasing the way a person reading a text message naturally would "
+        "(\"slodd\" means \"sold\"; \"60k\" means 60,000). Only help with things related to this "
+        "business: sales, expenses, stock, invoices, receipts, workers, and how the business is "
+        "doing. Politely redirect anything unrelated. AIRTIME & FLOAT: judge the direction of "
+        "money, not just the word \"airtime\". Buying, topping up, or restocking airtime or float "
+        "(money OUT) is an expense. Selling airtime to a customer (money IN) is a sale."
     )
 
 
@@ -302,9 +335,21 @@ def _conversation_state_block(pending: Optional[ChatProposal]) -> str:
     return (
         f"CONVERSATION STATE: There IS a pending, unconfirmed proposal awaiting a yes/no reply: "
         f"\"{pending.preview_text}\" (type: {pending.function_name}).{detail} If the entrepreneur's "
-        "new message is a correction to this (e.g. a different quantity), recompute the total from "
-        "the real unit price above, do not just repeat the old total. If it's unrelated, just handle "
-        "the new message, the old proposal stays pending in the background."
+        "new message is a CORRECTION to this same proposal (a different quantity, price, or "
+        "detail of the SAME sale/expense), actually call the matching propose_* function again "
+        "with the corrected values, recomputed from the real unit price above, do not just "
+        "describe the new total in plain text without calling it, and do not just repeat the old "
+        "total either. If it's unrelated (a complaint, small talk, a frustrated question, "
+        "anything not about this), just handle the new message on its own terms, the old "
+        "proposal stays pending in the background exactly as shown above, do not forget it or "
+        "start over. If asked directly whether anything is pending, or what you're waiting on, "
+        "answer using the real text above, never say there's nothing pending when this block says "
+        "otherwise. The ONE thing to avoid is calling add_product for a product this exact "
+        "pending proposal is ALREADY asking about adding (that creates a second, redundant "
+        "confirmation for the identical product and loses track of this one) -- that is different "
+        "from a correction, which must still go through the normal propose_* call, and different "
+        "from a genuinely different, unrelated new sale/expense/product, which correctly starts "
+        "its own new proposal too."
     )
 
 
@@ -329,7 +374,11 @@ def _authority_levels_block() -> str:
         "L4 irreversible/account-level action, always needs explicit confirmation. Never call a "
         "propose_*/add_product/mark_*/generate_*/send_*/commit_* function and simultaneously claim "
         "it is already done, the app shows the entrepreneur a preview and waits for a real new "
-        "reply before anything is saved. Never guess a number, call the matching read-only tool. "
+        "reply before anything is saved. This applies just as much to a plain text reply with no "
+        "function call at all -- never write anything that sounds like confirmation of a save "
+        "(\"recorded\", \"done\", \"saved\", \"added that for you\") unless a matching function was "
+        "actually called this turn and a real confirmation was already given, an L3/L4 action is "
+        "never described as complete from words alone. Never guess a number, call the matching read-only tool. "
         "No L3 action is ever taken from an ambiguous message, if you're not certain what a money "
         "detail actually means (not just whether you know it), ask one direct, specific question in "
         "plain text instead of calling a tool with a guessed value. This is the core of what makes "
@@ -433,6 +482,18 @@ class ChatEngine:
             return await self._handle_undo(db, user)
 
         pending = await _get_pending_proposal(db, user.id)
+
+        # Bug 8 fix: a brand-new product being added asked for its buying price before the sale
+        # finalizes, see _ask_buying_price_or_finalize. A bare number here answers that directly,
+        # deterministically, same reliability pattern as everywhere else in this codebase --
+        # anything that must work every time is code, not a hope the model recognizes it.
+        if pending is not None and pending.function_name == "propose_sale_awaiting_buying_price":
+            price = _parse_single_number(text)
+            if price is not None:
+                return await self._apply_buying_price_and_resume(db, user, pending, price)
+            # Not a plain number ("I don't remember", a question) -- falls through to the model
+            # turn below, which has this proposal's context via CONVERSATION STATE.
+
         if pending is not None and pending.function_name not in INCOMPLETE_PROPOSAL_FUNCTIONS:
             verdict = _classify_reply(text)
             if verdict == "yes":
@@ -540,9 +601,6 @@ class ChatEngine:
             if name in PROPOSAL_FUNCTIONS:
                 return await self._handle_propose(db, user, name, args, text)
 
-            if name == "update_profile_field":
-                return await self._handle_update_profile_field(db, user, args)
-
             if name in ("commit_sale", "commit_expense", "commit_currency_change", "commit_remove_worker"):
                 # The model should never call a commit_* function directly, commits only ever
                 # happen from _commit_proposal, gated on a real confirmation message. If the
@@ -576,6 +634,8 @@ class ChatEngine:
             return await self._propose_remove_worker(db, user, business_id, args)
         if name == "mark_document_paid":
             return await self._propose_mark_document_paid(db, user, business_id, args)
+        if name == "update_profile_field":
+            return await self._propose_update_profile_field(db, user, args)
         if name == "send_document":
             # send_document only makes sense as the COMMIT half of a pending document proposal
             #, if there's nothing pending, there's nothing to send yet.
@@ -667,18 +727,29 @@ class ChatEngine:
         # normal "propose_sale", so tapping Yes on this card commits through the usual sale path.
         return {"reply": f"{prefix}{preview}", "action": "confirm", "proposal_id": str(proposal.id)}
 
-    async def _auto_add_unmatched_products(self, db: AsyncSession, user: User, pending: ChatProposal) -> Optional[Dict[str, Any]]:
+    async def _auto_add_unmatched_products(
+        self, db: AsyncSession, user: User, pending: ChatProposal,
+        price_hint: Optional[float] = None, buying_price_hint: Optional[float] = None,
+    ) -> Optional[Dict[str, Any]]:
         """Deterministic app-code handling of 'yes' to 'want me to add this product?', see the
-        call site in handle_message for why this doesn't go through the model."""
+        call site in handle_message for why this doesn't go through the model. price_hint/
+        buying_price_hint are set when this is reached via _propose_add_product instead (the
+        model captured a price on the same turn it called add_product for the product a pending
+        sale is already waiting on -- see the redundant-proposal fix there)."""
         business_id = pending.business_id
         resolved = pending.payload.get("line_items") or []
         added_names = []
+        needs_buying_price: Optional[tuple] = None  # (item_id, product_name), first one only
         for r in resolved:
             if r["matched"]:
                 continue
+            unit_price = Decimal(str(r["line_total"] / r["quantity"])) if r.get("line_total") and r.get("quantity") else None
+            if unit_price is None and price_hint is not None:
+                unit_price = Decimal(str(price_hint))
+            buying_price = Decimal(str(buying_price_hint)) if buying_price_hint is not None else None
             item = Item(
                 business_id=business_id, user_id=user.id, name=r["product_name"],
-                unit_price=Decimal(str(r["line_total"] / r["quantity"])) if r.get("line_total") and r.get("quantity") else None,
+                unit_price=unit_price, buying_price=buying_price,
                 stock_level=Decimal(0), is_service=False,
             )
             db.add(item)
@@ -687,6 +758,8 @@ class ChatEngine:
             r["item_id"] = str(item.id)
             r["is_service"] = False
             added_names.append(r["product_name"])
+            if needs_buying_price is None and item.buying_price is None:
+                needs_buying_price = (str(item.id), r["product_name"])
 
         prefix = "Added " + ", ".join(f'"{n}"' for n in added_names) + " to your products. " if added_names else ""
 
@@ -699,9 +772,56 @@ class ChatEngine:
                 "draft": {"type": "sale", "description": item_desc, "amount": 0, "quantity": resolved[0]["quantity"] if resolved else 1},
             }
 
+        if needs_buying_price is not None:
+            item_id, product_name = needs_buying_price
+            return await self._ask_buying_price_or_finalize(
+                db, user, resolved, pending.payload.get("payment_type", "cash"), pending.payload.get("customer_name"),
+                prefix, item_id, product_name,
+            )
+
         return await self._finalize_sale_proposal(
             db, user, resolved, pending.payload.get("payment_type", "cash"), pending.payload.get("customer_name"),
             None, as_card=False, prefix=prefix,
+        )
+
+    async def _ask_buying_price_or_finalize(
+        self, db: AsyncSession, user: User, resolved: List[Dict[str, Any]], payment_type: str,
+        customer_name: Optional[str], prefix: str, item_id: str, product_name: str,
+    ) -> Dict[str, Any]:
+        """Bug 8 fix (2026-09-23): a brand-new product added mid-sale never had its buying price
+        asked, so profit could never be calculated for anything added this way. In plain, casual,
+        reason-first language, not a bare form field, per the explicit requirement -- and it's
+        asked before the sale finalizes, not skipped, since this is the one moment the entrepreneur
+        is already thinking about this exact product."""
+        payload = {
+            "item_id": item_id, "product_name": product_name,
+            "line_items": resolved, "payment_type": payment_type, "customer_name": customer_name,
+        }
+        preview = f"{prefix}How much did you buy {product_name} for, so I can work out your profit?"
+        proposal = await _create_proposal(db, user, "propose_sale_awaiting_buying_price", payload, preview)
+        return {"reply": preview, "action": "reply", "proposal_id": str(proposal.id)}
+
+    async def _apply_buying_price_and_resume(self, db: AsyncSession, user: User, pending: ChatProposal, price: float) -> Dict[str, Any]:
+        payload = pending.payload
+        item_id = payload.get("item_id")
+        if item_id:
+            stmt = select(Item).where(Item.id == uuid.UUID(item_id))
+            item = (await db.execute(stmt)).scalars().first()
+            if item:
+                item.buying_price = Decimal(str(price))
+        resolved = payload.get("line_items")
+        if not resolved:
+            # A standalone add_product (no sale was waiting on this one) -- nothing to resume.
+            # Deliberately does NOT replay trigger_text here the way _commit_add_product does:
+            # in this standalone path trigger_text is usually the very message that already
+            # triggered this add_product call in the first place, so replaying it would just
+            # re-process the same "add shoes..." text a second time and risk a redundant or
+            # confusing follow-up reply, not resume a genuinely separate pending sale.
+            await db.commit()
+            return {"reply": f"Got it, thanks! \"{payload.get('product_name')}\" is all set.", "action": "reply"}
+        return await self._finalize_sale_proposal(
+            db, user, resolved, payload.get("payment_type", "cash"), payload.get("customer_name"),
+            None, as_card=False, prefix="Got it, thanks! ",
         )
 
     async def _propose_add_product(self, db: AsyncSession, user: User, business_id, args: Dict[str, Any], text: str = "") -> Dict[str, Any]:
@@ -710,7 +830,8 @@ class ChatEngine:
             return {"reply": "What's the product called?", "action": "reply"}
         is_service = bool(args.get("is_service"))
         selling_price = args.get("selling_price")
-        preview = f"Add \"{name}\" to your products" + (f" at {_fmt(user.currency, selling_price)}" if selling_price else "") + "?"
+        buying_price = args.get("buying_price")
+
         # trigger_text lets _commit_add_product replay the original sale message once the
         # product exists. If a propose_sale_incomplete proposal is what's actually pending right
         # now (the usual path: propose_sale asked to add the product, and THIS call is answering
@@ -721,7 +842,41 @@ class ChatEngine:
             trigger_text = pending.payload["trigger_text"]
         else:
             trigger_text = text
-        payload = {"name": name, "is_service": is_service, "selling_price": selling_price, "trigger_text": trigger_text}
+
+        if pending and pending.function_name == "propose_sale_incomplete":
+            resolved_pending = pending.payload.get("line_items") or []
+            match = next((r for r in resolved_pending if not r["matched"] and r["product_name"].strip().lower() == name.strip().lower()), None)
+            if match:
+                # Bug 9 fix (2026-09-23): confirmed live -- "Yes please" didn't match the
+                # confirmation classifier, fell through to the model, which reached for
+                # add_product on its own for the EXACT product a sale is already waiting on. That
+                # created a second, separate "Add X to your products?" proposal that superseded
+                # the real one, losing track of the sale underneath it and costing an extra,
+                # confusing turn. Resolved the SAME deterministic way a typed "yes" would instead,
+                # folding in whatever price the model captured on this turn.
+                resolved = await self._auto_add_unmatched_products(db, user, pending, price_hint=selling_price, buying_price_hint=buying_price)
+                if resolved is not None:
+                    return resolved
+
+        if not is_service and buying_price is None:
+            # Bug 8 fix, standalone case: no pending sale to fold this into, but still never
+            # silently add a product with no cost data. The item is created right away (with no
+            # buying_price yet) so there's something real for the price answer to attach to --
+            # _apply_buying_price_and_resume just fills it in once given.
+            item = Item(
+                business_id=business_id, user_id=user.id, name=name,
+                unit_price=Decimal(str(selling_price)) if selling_price else None,
+                stock_level=Decimal(0), is_service=False,
+            )
+            db.add(item)
+            await db.flush()
+            preview = f"Added \"{name}\" to your products. How much did you buy it for, so I can work out your profit?"
+            payload = {"item_id": str(item.id), "product_name": name}
+            proposal = await _create_proposal(db, user, "propose_sale_awaiting_buying_price", payload, preview)
+            return {"reply": preview, "action": "reply", "proposal_id": str(proposal.id)}
+
+        preview = f"Add \"{name}\" to your products" + (f" at {_fmt(user.currency, selling_price)}" if selling_price else "") + "?"
+        payload = {"name": name, "is_service": is_service, "selling_price": selling_price, "buying_price": buying_price, "trigger_text": trigger_text}
         proposal = await _create_proposal(db, user, "add_product", payload, preview)
         return {"reply": preview, "action": "confirm", "proposal_id": str(proposal.id)}
 
@@ -823,17 +978,20 @@ class ChatEngine:
         proposal = await _create_proposal(db, user, "mark_document_paid", {"invoice_id": str(invoice.id)}, preview)
         return {"reply": preview, "action": "confirm", "proposal_id": str(proposal.id)}
 
-    async def _handle_update_profile_field(self, db: AsyncSession, user: User, args: Dict[str, Any]) -> Dict[str, Any]:
+    async def _propose_update_profile_field(self, db: AsyncSession, user: User, args: Dict[str, Any]) -> Dict[str, Any]:
+        """PROPOSE step. Deliberately confirmed like everything else now, not instant -- see
+        PROPOSAL_FUNCTIONS for why this overrides Volume 4's original L1 design."""
         field = args.get("field")
         value = (args.get("value") or "").strip()
         if field not in ("name", "type") or not value:
             return {"reply": "What would you like to change it to?", "action": "reply"}
         column = "business_name" if field == "name" else "business_type"
-        previous = getattr(user, column)
-        setattr(user, column, value)
-        await db.commit()
-        self._last_profile_edit[str(user.id)] = {"column": column, "previous": previous}
-        return {"reply": f"Done, your business {'name' if field == 'name' else 'type'} is now {value}. Anything else?", "action": "reply"}
+        label = "name" if field == "name" else "type"
+        current = getattr(user, column) or "not set"
+        preview = f"Change your business {label} from \"{current}\" to \"{value}\"?"
+        payload = {"column": column, "label": label, "value": value}
+        proposal = await _create_proposal(db, user, "update_profile_field", payload, preview)
+        return {"reply": preview, "action": "confirm", "proposal_id": str(proposal.id)}
 
     async def _handle_undo(self, db: AsyncSession, user: User) -> Dict[str, Any]:
         edit = self._last_profile_edit.pop(str(user.id), None)
@@ -870,6 +1028,8 @@ class ChatEngine:
                 reply = await self._commit_remove_worker(db, payload)
             elif name == "mark_document_paid":
                 reply = await self._commit_mark_document_paid(db, payload)
+            elif name == "update_profile_field":
+                reply = await self._commit_update_profile_field(db, user, payload)
             else:
                 reply = "Done."
             await db.commit()
@@ -933,6 +1093,7 @@ class ChatEngine:
         item = Item(
             business_id=business_id, user_id=user.id, name=payload["name"],
             unit_price=Decimal(str(payload["selling_price"])) if payload.get("selling_price") else None,
+            buying_price=Decimal(str(payload["buying_price"])) if payload.get("buying_price") else None,
             stock_level=Decimal(0), is_service=payload.get("is_service", False),
         )
         db.add(item)
@@ -993,6 +1154,13 @@ class ChatEngine:
         old = user.currency
         user.currency = payload["new_currency"]
         return f"Done, your currency is now {payload['new_currency']} (was {old}). Past figures stay in {old}."
+
+    async def _commit_update_profile_field(self, db: AsyncSession, user: User, payload: Dict[str, Any]) -> str:
+        column = payload["column"]
+        previous = getattr(user, column)
+        setattr(user, column, payload["value"])
+        self._last_profile_edit[str(user.id)] = {"column": column, "previous": previous}
+        return f"Done, your business {payload['label']} is now {payload['value']}. Anything else?"
 
     async def _commit_worker_invite(self, db: AsyncSession, user: User, payload: Dict[str, Any]) -> str:
         import random

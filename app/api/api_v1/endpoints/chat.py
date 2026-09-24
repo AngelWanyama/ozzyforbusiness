@@ -140,9 +140,14 @@ async def onboarding_choice(
 @router.post("/voice", response_model=VoiceChatResponse)
 async def process_voice(
     file: UploadFile = File(...),
-    db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    """Transcribes only -- deliberately does NOT process the transcript through chat_engine.
+    2026-09-23: live voice-to-response committed a misheard accent straight into a real reply
+    (in Swahili, with no self-check on whether the transcription even made sense) with no chance
+    to catch it first. Dictate-then-review instead: speech becomes editable text in the input box
+    that the user can check, same pattern as Claude Code's own voice input. This removes the
+    failure mode entirely rather than trying to detect a bad transcription after the fact."""
     content_type = (file.content_type or "").split(";")[0].strip()
     if content_type not in ALLOWED_AUDIO_TYPES:
         raise HTTPException(status_code=400, detail="That recording format isn't supported. Please try again.")
@@ -157,11 +162,7 @@ async def process_voice(
     if not transcript:
         raise HTTPException(status_code=400, detail="I couldn't hear that clearly. Please try again, ideally somewhere a bit quieter.")
 
-    try:
-        result = await chat_engine.handle_message(db, current_user, transcript)
-        return VoiceChatResponse(transcript=transcript, **result)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    return VoiceChatResponse(transcript=transcript, reply=None, action="reply")
 
 
 @router.post("/scan-receipt", response_model=ReceiptScanResponse)

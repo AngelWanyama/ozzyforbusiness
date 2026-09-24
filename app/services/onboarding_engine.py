@@ -170,6 +170,15 @@ def question_for(field: str, state: Dict[str, Any], user: User) -> Dict[str, Any
             "kind": "choice", "text": QUESTIONS["employees"],
             "choices": [{"label": "Yes", "value": "yes"}, {"label": "Not right now", "value": "no"}],
         }
+    if field == "stock_items":
+        # Design gap fixed 2026-09-23: this used to be a required inline question with no way to
+        # defer, per the bug report. Now offered as a choice first, matching the platform-wide
+        # button rule -- "later" is handled in handle_onboarding_choice exactly like declining
+        # logo/email, "now" falls straight through to the free-text question below.
+        return {
+            "kind": "choice", "text": "Would you like to set up your stock now, or add products as you go?",
+            "choices": [{"label": "Set it up now", "value": "now"}, {"label": "I'll add products as I go", "value": "later"}],
+        }
     if field == "pricing":
         known = state.get("known", {})
         item = next((i for i in known.get("stock_items", []) if i.get("selling_price") is None), None)
@@ -219,9 +228,13 @@ TOOLS = [{
                         "these: \"I'm sorry to hear that you're feeling this way\", \"I'm here to help with "
                         "any questions you have\", \"How can I assist you\", \"I understand your concern\", "
                         "\"I apologize for any inconvenience\". These are not Ozzy's voice.\n"
-                        "Do NOT ask the onboarding question here, that's handled separately and appended "
-                        "after your response. No em dashes. Never say 'bookkeeping' or 'accounting'. Never "
-                        "sound robotic, bureaucratic, clinical, condescending, or overly formal."
+                        "Do NOT ask anything here, not the onboarding question and not a follow-up question "
+                        "of your own invention either (e.g. \"Do you focus on any specific styles?\" or \"What "
+                        "else do you have in mind?\") -- the next onboarding question is ALWAYS handled "
+                        "separately and appended right after your response, so a question here doubles up "
+                        "and confuses the flow. This field is a statement, never a question, it should not "
+                        "contain a question mark. No em dashes. Never say 'bookkeeping' or 'accounting'. "
+                        "Never sound robotic, bureaucratic, clinical, condescending, or overly formal."
                     ),
                 },
                 "owner_name": {"type": ["string", "null"], "description": "Just the name itself, e.g. 'My name is Angel' -> 'Angel'. Fix obvious typos silently, don't comment on them. Null if not present in this message."},
@@ -404,10 +417,13 @@ async def interpret_onboarding_message(user: User, state: Dict[str, Any], text: 
         target_label = "how many employees they have -- expect a number (a word like 'three' counts too), set employees_count to it"
     system_prompt = (
         "IDENTITY: You are Ozzy, warm, friendly, calm, patient, encouraging, respectful, helpful, "
-        "human, non-judgmental. Never robotic, bureaucratic, clinical, condescending, overly "
-        "formal, or like a financial institution asking compliance questions. Never say "
-        "\"bookkeeping\" or \"accounting\". Never use an em dash, use a comma or a period instead. "
-        "Plain, everyday language.\n\n"
+        "human, non-judgmental -- talk like a friend getting to know someone's business, never "
+        "robotic, bureaucratic, clinical, condescending, overly formal, or like a financial "
+        "institution asking compliance questions. Never say \"bookkeeping\" or \"accounting\", in "
+        "any form, including as an ordinary verb (\"accounting for\"). Never use an idiom, "
+        "metaphor, or figure of speech that assumes native English fluency, say the literal thing "
+        "directly instead. Never use an em dash, use a comma or a period instead. Plain, everyday "
+        "language.\n\n"
         "You are getting to know a new business owner during onboarding, building understanding "
         "through conversation, not collecting registration data. Extract every fact the message "
         f"actually contains, however it's phrased (fix obvious typos silently). What's already "
@@ -654,6 +670,18 @@ def handle_onboarding_choice(user: User, state: Dict[str, Any], field: str, valu
         known["employees_count"] = 0
         state = {**state, "known": known}
         return _advance(state, user, prefix=f"{EMPLOYEES_NO_REPLY}\n\n")
+
+    if field == "stock_items":
+        if value == "now":
+            # Same pattern as employees "yes" -- stays on "stock_items" (still missing), the
+            # actual free-text question follows, answered normally by interpret_onboarding_message.
+            state = {**state, "known": known}
+            return {"state": state, "reply": QUESTIONS["stock_items"], "done": False, "next_field": "stock_items", "kind": "text"}
+        # "later"
+        declined.append("stock_items")
+        declined.append("pricing")
+        state = {**state, "known": known, "declined": declined}
+        return _advance(state, user, prefix="No problem, you can add products anytime by just telling me what you sold.\n\n")
 
     return _advance(state, user)
 
