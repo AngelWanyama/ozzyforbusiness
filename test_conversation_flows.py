@@ -20,6 +20,7 @@ test here so a regression is caught automatically, not just by someone happening
 same three sentences again by hand.
 """
 import asyncio
+import re
 import sys
 
 import httpx
@@ -72,6 +73,8 @@ async def cleanup(phone):
         uid = row[0]
         for table in ("chat_proposals", "transactions", "items"):
             cur.execute(f"DELETE FROM {table} WHERE user_id = ?", (uid,))
+        for table in ("customers", "invoices", "invites"):
+            cur.execute(f"DELETE FROM {table} WHERE business_id = ?", (uid,))
         cur.execute("DELETE FROM users WHERE id = ?", (uid,))
     con.commit()
     con.close()
@@ -604,6 +607,115 @@ async def test_single_service_not_treated_as_ambiguous(client):
     await cleanup(phone)
 
 
+async def check_proposal_type(client, name, phone, extra_setup, trigger_text, expected_actions):
+    """2026-09-24: added after being explicitly called out for verifying the platform-wide
+    button rule against only 2-3 proposal types and generalizing from there. Every distinct
+    proposal type in chat_engine.py now gets its own test, individually, checking all three
+    things that were claimed "fixed everywhere": a real button on the proposal itself, survival
+    of an off-topic detour, and a plain typed "yes" reliably confirming it -- each in its own
+    fresh conversation so one check can't mask a failure in another."""
+    # Check 1: shows a real button.
+    await cleanup(phone)
+    headers = {"Authorization": f"Bearer {await register(client, phone)}"}
+    if extra_setup:
+        await extra_setup(client, headers)
+    r = await client.post("/api/v1/chat/process", json={"text": trigger_text}, headers=headers)
+    d = r.json()
+    print(f"  [{name}] proposal reply:", d)
+    has_button = d.get("action") in expected_actions and bool(d.get("proposal_id"))
+    check(f"{name}: shows a real button pair, not plain text", has_button, d)
+    await cleanup(phone)
+    if not has_button:
+        return
+
+    # Check 2: survives an off-topic detour without being denied.
+    await cleanup(phone)
+    headers = {"Authorization": f"Bearer {await register(client, phone)}"}
+    if extra_setup:
+        await extra_setup(client, headers)
+    await client.post("/api/v1/chat/process", json={"text": trigger_text}, headers=headers)
+    await client.post("/api/v1/chat/process", json={"text": "this app is annoying me today"}, headers=headers)
+    r = await client.post("/api/v1/chat/process", json={"text": "do you have anything pending?"}, headers=headers)
+    reply = (r.json().get("reply") or "").lower()
+    print(f"  [{name}] after off-topic detour, asked directly:", reply)
+    survives = "nothing" not in reply and "don't have any" not in reply and "no pending" not in reply and not reply.strip().startswith("no ")
+    check(f"{name}: survives an off-topic detour without being denied", survives, reply)
+    await cleanup(phone)
+
+    # Check 3: plain "yes" reliably confirms it.
+    await cleanup(phone)
+    headers = {"Authorization": f"Bearer {await register(client, phone)}"}
+    if extra_setup:
+        await extra_setup(client, headers)
+    await client.post("/api/v1/chat/process", json={"text": trigger_text}, headers=headers)
+    r = await client.post("/api/v1/chat/process", json={"text": "yes"}, headers=headers)
+    d = r.json()
+    print(f"  [{name}] after plain 'yes':", d)
+    confirmed = bool(d.get("reply")) and d.get("proposal_id") is None
+    check(f"{name}: plain 'yes' reliably confirms it", confirmed, d)
+    await cleanup(phone)
+
+
+async def test_every_proposal_type_individually(client):
+    """One test per distinct proposal/action type that exists in chat_engine.py, per the
+    explicit 2026-09-24 requirement not to generalize from a handful of examples."""
+    print("\n=== CHAT: every proposal type individually (button, off-topic survival, plain yes) ===")
+
+    async def add_shoes(client, headers):
+        await client.post("/api/v1/inventory/", json={"name": "shoes", "unit_price": 30000, "buying_price": 15000, "stock_level": 10, "is_service": False}, headers=headers)
+
+    await check_proposal_type(client, "propose_sale", "+256700001030", add_shoes, "sold 1 pair of shoes at 30000", {"confirm_sale"})
+    await check_proposal_type(client, "propose_expense", "+256700001031", None, "paid 5000 for transport", {"confirm_expense"})
+    await check_proposal_type(client, "add_product", "+256700001032", None, "add a new product called bags, I buy them at 10000 and sell at 20000", {"confirm"})
+
+    async def credit_sale_setup(client, headers):
+        await client.post("/api/v1/inventory/", json={"name": "shoes", "unit_price": 30000, "buying_price": 15000, "stock_level": 10, "is_service": False}, headers=headers)
+        r = await client.post("/api/v1/chat/process", json={"text": "sold 1 pair of shoes at 30000 on credit to John"}, headers=headers)
+        d = r.json()
+        if d.get("proposal_id"):
+            await client.post("/api/v1/chat/confirm", json={"proposal_id": d["proposal_id"]}, headers=headers)
+
+    # "mark John as paid" is genuinely ambiguous with mark_document_paid (an invoice), confirmed
+    # live 2026-09-24 -- unambiguous phrasing for testing THIS specific tool.
+    await check_proposal_type(client, "mark_customer_paid", "+256700001033", credit_sale_setup, "clear John's outstanding balance", {"confirm"})
+    await check_proposal_type(client, "generate_document_preview", "+256700001034", None, "invoice John for 2 dresses at 30000 each", {"confirm"})
+
+    async def unpaid_invoice_setup(client, headers):
+        r = await client.post("/api/v1/chat/process", json={"text": "invoice John for 2 dresses at 30000 each"}, headers=headers)
+        d = r.json()
+        if d.get("proposal_id"):
+            await client.post("/api/v1/chat/confirm", json={"proposal_id": d["proposal_id"]}, headers=headers)
+
+    await check_proposal_type(client, "mark_document_paid", "+256700001035", unpaid_invoice_setup, "mark John's invoice as paid", {"confirm"})
+    await check_proposal_type(client, "update_profile_field", "+256700001036", None, "change my business name to Rinah Fashions", {"confirm"})
+    await check_proposal_type(client, "propose_currency_change", "+256700001037", None, "change my currency to KES", {"confirm"})
+    await check_proposal_type(client, "generate_worker_invite", "+256700001038", None, "add a worker with phone number +256700009996", {"confirm"})
+
+    async def worker_setup(client, headers):
+        # redeem_invite CREATES the worker account itself and rejects an already-registered
+        # phone -- confirmed live 2026-09-24, without cleaning up the worker's own account too
+        # (not just the owner's), the SECOND time this test runs the redeem silently fails
+        # (phone already exists from the prior run) and no worker ever gets created, so "remove
+        # worker" correctly reports not found -- a test bug, not an app bug.
+        await cleanup("+256700009995")
+        r = await client.post("/api/v1/chat/process", json={"text": "add a worker with phone number +256700009995"}, headers=headers)
+        d = r.json()
+        if d.get("proposal_id"):
+            r = await client.post("/api/v1/chat/confirm", json={"proposal_id": d["proposal_id"]}, headers=headers)
+            reply = r.json().get("reply") or ""
+            m = re.search(r"\b(\d{6})\b", reply)
+            if m:
+                await client.post("/api/v1/invites/redeem", json={"code": m.group(1), "password": "testpass123"})
+
+    await check_proposal_type(client, "propose_remove_worker", "+256700001039", worker_setup, "remove worker +256700009995", {"confirm"})
+    await cleanup("+256700009995")
+
+    async def low_stock_shoes(client, headers):
+        await client.post("/api/v1/inventory/", json={"name": "shoes", "unit_price": 30000, "buying_price": 15000, "stock_level": 5, "is_service": False}, headers=headers)
+
+    await check_proposal_type(client, "propose_restock", "+256700001040", low_stock_shoes, "restocked 10 more shoes, bought at 15000 each", {"confirm"})
+
+
 async def test_cogs_profit_calculation(client):
     """2026-09-23, CRITICAL: net_profit was sales minus expenses everywhere in the app, cost of
     goods sold never subtracted despite buying_price being collected. Recreates Angel's exact
@@ -716,6 +828,8 @@ async def main():
 
         await test_cogs_profit_calculation(client)
         await test_cogs_unknown_buying_price_is_honest(client)
+
+        await test_every_proposal_type_individually(client)
 
     print("\n=== SUMMARY ===")
     for label, status in results:

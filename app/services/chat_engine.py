@@ -63,7 +63,7 @@ PROPOSAL_FUNCTIONS = {
     "propose_sale", "propose_expense", "add_product", "mark_customer_paid",
     "generate_document_preview", "propose_currency_change",
     "generate_worker_invite", "propose_remove_worker", "mark_document_paid",
-    "update_profile_field",
+    "update_profile_field", "propose_restock",
 }
 
 READ_ONLY_FUNCTIONS = {"get_report_summary", "get_recent_activity", "get_inventory", "list_low_stock"}
@@ -72,7 +72,10 @@ READ_ONLY_FUNCTIONS = {"get_report_summary", "get_recent_activity", "get_invento
 # amount, or waiting on a new product) is never auto-committable, a "yes" here answers a
 # clarifying question, not "record this", so it must always go back through the model with
 # full context rather than straight to a commit_* handler.
-INCOMPLETE_PROPOSAL_FUNCTIONS = {"propose_sale_incomplete", "propose_expense_incomplete", "propose_sale_awaiting_buying_price"}
+INCOMPLETE_PROPOSAL_FUNCTIONS = {
+    "propose_sale_incomplete", "propose_expense_incomplete", "propose_sale_awaiting_buying_price",
+    "propose_restock_awaiting_price",
+}
 
 _SINGLE_NUMBER_RE = re.compile(r"[\d][\d,]*(?:\.\d+)?")
 
@@ -164,6 +167,24 @@ TOOLS = [
         }, "required": ["name"]},
     }},
     {"type": "function", "function": {
+        "name": "propose_restock",
+        "description": (
+            "PROPOSE step. New stock coming IN for a product that ALREADY EXISTS in the catalog "
+            "(e.g. 'restocked 20 pairs of shoes', 'bought 10 more bags of rice at 15000 each'). "
+            "If the product isn't in the catalog yet, use add_product instead, this is only for "
+            "something already there. Returns a preview, never writes to the database -- always "
+            "call this directly as soon as a product name and quantity are both known, even if no "
+            "price was given at all, do not ask for the price in plain text first. Omit "
+            "buying_price entirely when not stated, the app itself asks for it afterward in its "
+            "own follow-up turn, that is not your job here."
+        ),
+        "parameters": {"type": "object", "properties": {
+            "product_name": {"type": "string"},
+            "quantity": {"type": "number"},
+            "buying_price": {"type": "number", "description": "Cost PER UNIT for this restock, if stated or derivable (e.g. 'bought 20 at 15000 each' -> 15000, 'paid 300000 for 20' -> 15000). Omit if not stated."},
+        }, "required": ["product_name", "quantity"]},
+    }},
+    {"type": "function", "function": {
         "name": "propose_expense",
         "description": "PROPOSE step (Volume 7). Parses an expense and returns a preview with an assigned category. Never writes to the database.",
         "parameters": {"type": "object", "properties": {
@@ -174,7 +195,7 @@ TOOLS = [
     }},
     {"type": "function", "function": {
         "name": "mark_customer_paid",
-        "description": "Clears some or all of a customer's outstanding balance (Volume 8). Preview only, omit amount to mark the full balance paid.",
+        "description": "PROPOSE step (Volume 8). Returns a preview, never writes to the database -- always call this directly when told to clear/mark paid a customer's balance, do not ask in plain text whether they mean the full balance or a specific amount first. Omitting amount IS the correct way to mean the full balance, call it that way immediately when no amount was given, the app's own preview will show the full amount and ask for a real confirm.",
         "parameters": {"type": "object", "properties": {
             "customer_name": {"type": "string"},
             "amount": {"type": "number"},
@@ -208,7 +229,7 @@ TOOLS = [
     }},
     {"type": "function", "function": {
         "name": "update_profile_field",
-        "description": "Instant, low-stakes profile update (Volume 4), business name, type, or logo only. Applies immediately, no confirmation needed.",
+        "description": "PROPOSE step. Business name or type change. Returns a preview, never writes to the database -- always call this directly, do not ask in plain text whether to proceed first, the app shows a real confirm button after this call.",
         "parameters": {"type": "object", "properties": {
             "field": {"type": "string", "enum": ["name", "type"]},
             "value": {"type": "string"},
@@ -216,12 +237,12 @@ TOOLS = [
     }},
     {"type": "function", "function": {
         "name": "propose_currency_change",
-        "description": "PROPOSE step (Volume 4). Currency changes are account-level and largely irreversible, always confirmed, never instant.",
+        "description": "PROPOSE step (Volume 4). Returns a preview, never writes to the database -- always call this directly when a currency change is requested, do not ask in plain text whether to proceed first, the app shows a real confirm button after this call and nothing is changed until that's confirmed.",
         "parameters": {"type": "object", "properties": {"new_currency": {"type": "string"}}, "required": ["new_currency"]},
     }},
     {"type": "function", "function": {
         "name": "generate_worker_invite",
-        "description": "Creates a 6-digit, single-use, 7-day invite code for a new Worker (Volume 17). Preview only, confirm before creating the real code.",
+        "description": "PROPOSE step (Volume 17). Returns a preview, never actually creates the invite code -- always call this directly when a new worker's phone number is given, do not ask in plain text whether to proceed first, the app shows a real confirm button after this call and no code is generated until that's confirmed.",
         "parameters": {"type": "object", "properties": {"worker_phone_number": {"type": "string"}}, "required": ["worker_phone_number"]},
     }},
     {"type": "function", "function": {
@@ -234,9 +255,14 @@ TOOLS = [
         "description": (
             "Owner-only (Volume 10). Real sales, cost of goods sold, expenses, and profit for a "
             "period, never guess these numbers. net_profit already has cost of goods sold "
-            "subtracted, don't subtract it again. If cogs_known_complete is false, some sold "
-            "items don't have a buying price on file, so mention plainly that real profit could "
-            "be a bit lower than this figure, don't state it as a certain, exact number."
+            "subtracted, don't subtract it again. If cogs_known_complete is false, cost_of_goods_sold "
+            "is a KNOWN-INCOMPLETE figure, not a real zero -- confirmed live 2026-09-24, this was "
+            "misread as 'no cost of goods, so all of today's sales is profit', which is the "
+            "opposite of true, some cost is real but simply unknown (an item was sold with no "
+            "buying price on file). Never say 'you kept it all as profit' or anything implying "
+            "cost of goods was actually zero when cogs_known_complete is false, say plainly that "
+            "you don't have a cost on file for something sold, so real profit could be lower than "
+            "the number shown, don't state it as certain."
         ),
         "parameters": {"type": "object", "properties": {
             "period": {"type": "string", "enum": ["today", "this_week", "this_month", "custom"]},
@@ -343,8 +369,11 @@ def _conversation_state_block(pending: Optional[ChatProposal]) -> str:
         "anything not about this), just handle the new message on its own terms, the old "
         "proposal stays pending in the background exactly as shown above, do not forget it or "
         "start over. If asked directly whether anything is pending, or what you're waiting on, "
-        "answer using the real text above, never say there's nothing pending when this block says "
-        "otherwise. The ONE thing to avoid is calling add_product for a product this exact "
+        f"answer using the real text above (\"{pending.preview_text}\"). Confirmed live: this is "
+        "a real, repeated failure, do not say \"you don't have any pending transactions\" or "
+        "\"everything is up to date\" or anything else implying nothing is pending -- this "
+        "CONVERSATION STATE block being present at all means something genuinely is, check it "
+        "before answering rather than answering from habit. The ONE thing to avoid is calling add_product for a product this exact "
         "pending proposal is ALREADY asking about adding (that creates a second, redundant "
         "confirmation for the identical product and loses track of this one) -- that is different "
         "from a correction, which must still go through the normal propose_* call, and different "
@@ -386,7 +415,16 @@ def _authority_levels_block() -> str:
         "always gets a real question, every time, never a silent assumption, e.g. '2 sodas for "
         "6000' doesn't say whether that's 6,000 total or 6,000 each, so ask which, don't pick one. "
         "But do not manufacture ambiguity that isn't there: '2 dresses at 30000 each' already says "
-        "each, and '2 dresses for a total of 60000' already says total, so proceed normally on both."
+        "each, and '2 dresses for a total of 60000' already says total, so proceed normally on both. "
+        "AMBIGUOUS (multiple possible readings of a value that WAS given) is different from "
+        "OPTIONAL-AND-NOT-GIVEN-YET (a field marked optional in a function's own schema that "
+        "simply wasn't mentioned at all) -- confirmed live 2026-09-24, this distinction was being "
+        "missed: 'restocked 10 more shoes' with no price mentioned is NOT ambiguous, it's just "
+        "missing an optional field, call the function now with that field omitted rather than "
+        "asking about it in plain text first, exactly as each function's own description says to. "
+        "Withholding a function call to ask about an optional field in plain text is the same "
+        "mistake as claiming something is done without calling the function at all -- both skip "
+        "the real PROPOSE step the app is built around."
     )
 
 
@@ -493,6 +531,15 @@ class ChatEngine:
                 return await self._apply_buying_price_and_resume(db, user, pending, price)
             # Not a plain number ("I don't remember", a question) -- falls through to the model
             # turn below, which has this proposal's context via CONVERSATION STATE.
+
+        # Same deterministic pattern, for a restock's per-unit cost.
+        if pending is not None and pending.function_name == "propose_restock_awaiting_price":
+            price = _parse_single_number(text)
+            if price is not None:
+                stmt = select(Item).where(Item.id == uuid.UUID(pending.payload["item_id"]))
+                item = (await db.execute(stmt)).scalars().first()
+                if item:
+                    return await self._finalize_restock_proposal(db, user, item, pending.payload["quantity"], price)
 
         if pending is not None and pending.function_name not in INCOMPLETE_PROPOSAL_FUNCTIONS:
             verdict = _classify_reply(text)
@@ -636,6 +683,8 @@ class ChatEngine:
             return await self._propose_mark_document_paid(db, user, business_id, args)
         if name == "update_profile_field":
             return await self._propose_update_profile_field(db, user, args)
+        if name == "propose_restock":
+            return await self._propose_restock(db, user, business_id, args)
         if name == "send_document":
             # send_document only makes sense as the COMMIT half of a pending document proposal
             #, if there's nothing pending, there's nothing to send yet.
@@ -833,15 +882,19 @@ class ChatEngine:
         buying_price = args.get("buying_price")
 
         # trigger_text lets _commit_add_product replay the original sale message once the
-        # product exists. If a propose_sale_incomplete proposal is what's actually pending right
-        # now (the usual path: propose_sale asked to add the product, and THIS call is answering
-        # that), its own trigger_text is the real original message, "sold 2 sodas for 6000",
-        # not whatever short reply ("yes") happened to be what invoked add_product just now.
+        # product exists, ONLY when there's a real pending sale to resume ("propose_sale_incomplete"
+        # asked to add the product, and THIS call is answering that -- its trigger_text is the real
+        # original message, "sold 2 sodas for 6000"). Confirmed live 2026-09-24: this used to fall
+        # back to replaying the CURRENT message (`text`) whenever there was no such pending sale --
+        # for a genuinely standalone "add a new product called bags..." request, that meant
+        # replaying the exact same add-product request after committing it, which just called
+        # add_product on itself again and produced a redundant, confusing second confirmation for
+        # the same item. No fallback now: no established pending sale means nothing to resume.
         pending = await _get_pending_proposal(db, user.id)
         if pending and pending.function_name == "propose_sale_incomplete" and pending.payload.get("trigger_text"):
             trigger_text = pending.payload["trigger_text"]
         else:
-            trigger_text = text
+            trigger_text = ""
 
         if pending and pending.function_name == "propose_sale_incomplete":
             resolved_pending = pending.payload.get("line_items") or []
@@ -878,6 +931,37 @@ class ChatEngine:
         preview = f"Add \"{name}\" to your products" + (f" at {_fmt(user.currency, selling_price)}" if selling_price else "") + "?"
         payload = {"name": name, "is_service": is_service, "selling_price": selling_price, "buying_price": buying_price, "trigger_text": trigger_text}
         proposal = await _create_proposal(db, user, "add_product", payload, preview)
+        return {"reply": preview, "action": "confirm", "proposal_id": str(proposal.id)}
+
+    async def _propose_restock(self, db: AsyncSession, user: User, business_id, args: Dict[str, Any]) -> Dict[str, Any]:
+        """New feature, 2026-09-24: there was no restock concept in the app at all before this --
+        a restock message either got a plain-text clarifying question with no button, or the
+        model reached for add_product on an item that already existed. Same PROPOSE/COMMIT +
+        button pattern as everything else, and reuses the buying-price-ask flow from bug 8 (a
+        restock's cost per unit matters for COGS accuracy just as much as a first-time add)."""
+        name = (args.get("product_name") or "").strip()
+        quantity = args.get("quantity")
+        if not name or not quantity:
+            return {"reply": "What did you restock, and how many?", "action": "reply"}
+        item = await _match_item(db, business_id, name)
+        if not item:
+            return {"reply": f"I don't have \"{name}\" in your products yet. Want me to add it as a new product instead?", "action": "reply"}
+        buying_price = args.get("buying_price")
+        if buying_price is None:
+            payload = {"item_id": str(item.id), "product_name": item.name, "quantity": quantity}
+            preview = f"Got it, {quantity:g} more {item.name}. How much did you pay per unit, so I can keep your cost price accurate?"
+            proposal = await _create_proposal(db, user, "propose_restock_awaiting_price", payload, preview)
+            return {"reply": preview, "action": "reply", "proposal_id": str(proposal.id)}
+        return await self._finalize_restock_proposal(db, user, item, quantity, buying_price)
+
+    async def _finalize_restock_proposal(self, db: AsyncSession, user: User, item: Item, quantity: float, buying_price: float) -> Dict[str, Any]:
+        total_cost = float(buying_price) * float(quantity)
+        preview = (
+            f"Restock {quantity:g} more {item.name} at {_fmt(user.currency, buying_price)} each "
+            f"(total {_fmt(user.currency, total_cost)})? This updates your stock and cost price."
+        )
+        payload = {"item_id": str(item.id), "product_name": item.name, "quantity": quantity, "buying_price": buying_price}
+        proposal = await _create_proposal(db, user, "propose_restock", payload, preview)
         return {"reply": preview, "action": "confirm", "proposal_id": str(proposal.id)}
 
     async def _propose_expense(self, db: AsyncSession, user: User, business_id, args: Dict[str, Any]) -> Dict[str, Any]:
@@ -1030,6 +1114,8 @@ class ChatEngine:
                 reply = await self._commit_mark_document_paid(db, payload)
             elif name == "update_profile_field":
                 reply = await self._commit_update_profile_field(db, user, payload)
+            elif name == "propose_restock":
+                reply = await self._commit_restock(db, user, business_id, payload)
             else:
                 reply = "Done."
             await db.commit()
@@ -1161,6 +1247,26 @@ class ChatEngine:
         setattr(user, column, payload["value"])
         self._last_profile_edit[str(user.id)] = {"column": column, "previous": previous}
         return f"Done, your business {payload['label']} is now {payload['value']}. Anything else?"
+
+    async def _commit_restock(self, db: AsyncSession, user: User, business_id, payload: Dict[str, Any]) -> str:
+        stmt = select(Item).where(Item.id == uuid.UUID(payload["item_id"]))
+        item = (await db.execute(stmt)).scalars().first()
+        if not item:
+            return "That product no longer exists."
+        qty = Decimal(str(payload["quantity"]))
+        buying_price = Decimal(str(payload["buying_price"]))
+        item.stock_level = (item.stock_level or Decimal(0)) + qty
+        # Latest cost replaces the old one, same single-cost-field model used everywhere else in
+        # the app (no cost history tracking) -- future sales of this item cost out at this price.
+        item.buying_price = buying_price
+        total_cost = buying_price * qty
+        transaction = Transaction(
+            user_id=user.id, business_id=business_id, item_id=item.id,
+            type=TransactionType.INVENTORY_ADJUSTMENT, amount=total_cost, currency=user.currency,
+            description=f"Restock: {item.name}", category="Stock/Inventory", quantity=qty,
+        )
+        db.add(transaction)
+        return f"Done, added {qty:g} {item.name} to your stock. Cost price updated to {_fmt(user.currency, buying_price)} each."
 
     async def _commit_worker_invite(self, db: AsyncSession, user: User, payload: Dict[str, Any]) -> str:
         import random
