@@ -169,6 +169,28 @@ async def test_wrong_word_substitution(client):
     await cleanup(phone)
 
 
+async def test_apostrophe_in_business_name(client):
+    """Bug 1, 2026-09-23: apostrophes ('Angel's Salon', 'women's hair') triggered the generic
+    'trouble connecting' fallback. Root cause confirmed in the server log as openai.APITimeoutError,
+    not an encoding issue -- apostrophes were a coincidence, the SDK escapes them into the request
+    body like any other JSON string. Fixed by catching APIConnectionError (APITimeoutError's base
+    class) for the retry instead of string-matching "Connection" in the exception text. This test
+    can't force a real timeout, so it confirms the actual symptom Angel saw -- apostrophes flow
+    through cleanly end to end -- as the most direct regression check available."""
+    print("\n=== ONBOARDING: apostrophes in names/messages process normally ===")
+    phone = "+256700000909"
+    headers = await new_onboarding_user(client, phone)
+    for text in ["Angel", "Angel's Salon", "We do women's hair and nails"]:
+        d = await send_msg(client, headers, text)
+        print(f"  reply to {text!r}:", d["reply"])
+        check(
+            f"{text!r} does not trigger the connectivity fallback",
+            "trouble connecting" not in d["reply"].lower() and "didn't quite catch" not in d["reply"].lower(),
+            d["reply"],
+        )
+    await cleanup(phone)
+
+
 async def test_direct_question_to_ozzy(client):
     print("\n=== ONBOARDING: a direct question aimed at Ozzy mid-onboarding ===")
     phone = "+256700000903"
@@ -297,6 +319,31 @@ async def test_business_description_natural_phrasing(client):
     await cleanup(phone)
 
 
+async def test_no_unscripted_extra_question(client):
+    """Bug 2, 2026-09-23: reproduced live -- the model sometimes tacked its own follow-up
+    question onto the acknowledgment ("Do you focus on any specific styles?"), doubling up with
+    the deterministically-appended real next question. The response line (everything before the
+    "\\n\\n" separator, which is the model's own free text) must never contain a "?" -- the next
+    onboarding question is always the second line, generated separately."""
+    print("\n=== ONBOARDING: no unscripted question of Ozzy's own invention ===")
+    phone = "+256700000910"
+    headers = await new_onboarding_user(client, phone)
+    await send_msg(client, headers, "Angel")
+    await send_msg(client, headers, "Angel Shoes")
+    # "We sell shoes" specifically reproduced the extra-question bug live -- a short, single-topic
+    # answer is exactly what invited the model to ask "anything else?" on its own initiative.
+    d = await send_msg(client, headers, "We sell shoes")
+    print("  reply:", d["reply"])
+    response_line = d["reply"].split("\n\n")[0].strip()
+    check(
+        "the acknowledgment line contains no question of Ozzy's own, only a statement",
+        "?" not in response_line,
+        d["reply"],
+    )
+    check("the real next question still follows normally", "where is your business located" in d["reply"].lower(), d["reply"])
+    await cleanup(phone)
+
+
 async def test_sale_mentioned_mid_onboarding(client):
     """Issue 5, 2026-09-22: a sale mentioned mid-onboarding ('Sold shoes at 50,000 ugx, one
     pair') got a conversational reply that sounded exactly like a real confirmation ('Got it,
@@ -340,6 +387,47 @@ async def test_pricing_bare_pronoun_answer(client):
     d = await send_msg(client, headers, "I buy them at 10000 and sell at 20000")
     print("  pricing reply:", d["reply"], " done=", d["done"])
     check("a bare-pronoun price answer is accepted, onboarding reaches completion", d.get("done") is True, d)
+    await cleanup(phone)
+
+
+async def test_stock_setup_now_vs_later_choice(client):
+    """Design gap (bug 7), 2026-09-23: onboarding's stock setup was a required inline question
+    with no way to defer. Now offered as a choice first, matching the platform-wide button rule.
+    Tests both branches: "later" declines cleanly and reaches completion without ever asking for
+    stock, "now" falls through to the real free-text question as before."""
+    print("\n=== ONBOARDING: stock setup now-vs-later choice ===")
+
+    # Branch 1: "later" -- deliberately vague business description ("I run a small boutique", no
+    # product names) so stock_items reaches as its own fresh question, not pre-satisfied by an
+    # earlier product mention (see onboarding_engine._is_known's business_description branch).
+    phone = "+256700000914"
+    headers = await new_onboarding_user(client, phone)
+    for text in ["Angel", "Rinah Fashions", "I run a small boutique", "Kampala"]:
+        await send_msg(client, headers, text)
+    await send_choice(client, headers, "phone_confirm", "same")
+    await send_msg(client, headers, "just my phone is fine")
+    await send_choice(client, headers, "logo", "none")
+    d = await send_msg(client, headers, "Not right now")
+    print("  employees reply:", d["reply"], " field=", d.get("field"), " kind=", d.get("kind"))
+    check("stock question appears as a real choice, not a required inline question", d.get("kind") == "choice" and bool(d.get("choices")), d)
+
+    d = await send_choice(client, headers, "stock_items", "later")
+    print("  'later' reply:", d["reply"], " done=", d.get("done"))
+    check("declining stock setup reaches completion, never asks for products", d.get("done") is True and "what products" not in d["reply"].lower(), d)
+    await cleanup(phone)
+
+    # Branch 2: "now" falls through to the real question.
+    phone = "+256700000915"
+    headers = await new_onboarding_user(client, phone)
+    for text in ["Angel", "Rinah Fashions", "I run a small boutique", "Kampala"]:
+        await send_msg(client, headers, text)
+    await send_choice(client, headers, "phone_confirm", "same")
+    await send_msg(client, headers, "just my phone is fine")
+    await send_choice(client, headers, "logo", "none")
+    await send_msg(client, headers, "Not right now")
+    d = await send_choice(client, headers, "stock_items", "now")
+    print("  'now' reply:", d["reply"], " kind=", d.get("kind"))
+    check("choosing 'now' asks the real stock question as free text", d.get("kind") == "text" and "what products" in d["reply"].lower(), d)
     await cleanup(phone)
 
 
@@ -451,6 +539,39 @@ async def test_chat_sales(client, headers):
         d["action"] == "reply" and d.get("proposal_id") is None and "each" in (d.get("reply") or "").lower(),
         d,
     )
+
+
+async def test_no_false_done_claim_in_main_chat(client):
+    """Bug 4, CRITICAL, 2026-09-23: Ozzy said "Done" for a sale that was never actually recorded,
+    discovered because a second sale attempt found the first one still sitting there as pending.
+    Honest note on this one specifically: unlike bugs 3/9/10, this was never independently
+    reproduced with a live transcript -- it was diagnosed by root-cause analysis (the
+    AUTHORITY_LEVELS block had no rule at all against a plain-text reply, with no function call,
+    claiming a save happened). The fix is a prompt-level safeguard, and this test is a general
+    consistency check across an ordinary conversation, not a forced reproduction of the original
+    failure -- it cannot prove the rare failure mode is gone, only that the safeguard is in place
+    and doesn't fire falsely under normal use."""
+    print("\n=== CHAT: never claims something is recorded/done without a real transaction ===")
+    phone = "+256700000980"
+    await cleanup(phone)
+    token = await register(client, phone)
+    headers = {"Authorization": f"Bearer {token}"}
+    await client.patch("/api/v1/users/me", json={"business_name": "Test Co", "currency": "UGX"}, headers=headers)
+    await client.post("/api/v1/inventory/", json={"name": "shoes", "unit_price": 30000, "buying_price": 15000, "stock_level": 10, "is_service": False}, headers=headers)
+
+    claim_words = ("recorded", "done", "saved", "added that for you")
+    for text in ["sold 1 pair of shoes at 30000", "actually make it 2", "are you okay", "what's my profit today"]:
+        before = count_transactions(phone)
+        r = await client.post("/api/v1/chat/process", json={"text": text}, headers=headers)
+        d = r.json()
+        after = count_transactions(phone)
+        reply = (d.get("reply") or "").lower()
+        print(f"  USER: {text}")
+        print(f"  OZZY: {d}")
+        claims_done = any(w in reply for w in claim_words)
+        if claims_done:
+            check(f"'{text}': a done/recorded claim only appears alongside a real new transaction", after > before, f"before={before} after={after} reply={reply}")
+    await cleanup(phone)
 
 
 async def test_offtopic_detour_preserves_pending_sale(client):
@@ -801,6 +922,7 @@ async def main():
         await test_single_word_name(client)
         await test_name_typo(client)
         await test_wrong_word_substitution(client)
+        await test_apostrophe_in_business_name(client)
         await test_direct_question_to_ozzy(client)
         await test_rude_reply(client)
         await test_refuses_to_continue(client)
@@ -808,8 +930,10 @@ async def main():
         await test_employees_decline_loop(client)
         await test_email_decline_variants(client)
         await test_business_description_natural_phrasing(client)
+        await test_no_unscripted_extra_question(client)
         await test_sale_mentioned_mid_onboarding(client)
         await test_pricing_bare_pronoun_answer(client)
+        await test_stock_setup_now_vs_later_choice(client)
         await test_full_flow_scripted_acks(client)
 
         phone = "+256700000999"
@@ -820,6 +944,7 @@ async def main():
         await test_chat_sales(client, headers)
         await cleanup(phone)
 
+        await test_no_false_done_claim_in_main_chat(client)
         await test_offtopic_detour_preserves_pending_sale(client)
         await test_yes_please_confirms_add_product_sale(client)
         await test_new_product_prompts_for_buying_price(client)
