@@ -20,12 +20,15 @@ export default function AppLayout() {
   const allNav = [
     { to: '/chat', icon: 'chat', label: 'Chat' },
     { to: '/transactions', icon: 'history', label: 'Activities' },
+    { to: '/inventory', icon: 'inventory_2', label: 'Inventory' },
     { to: '/reports', icon: 'analytics', label: 'Reports' },
     { to: '/settings', icon: 'settings', label: 'Settings' },
   ];
 
-  // Workers get a limited view: no Reports (profit/totals) and no Settings (business config).
-  const nav = role === 'worker' ? allNav.filter(n => n.to !== '/reports' && n.to !== '/settings') : allNav;
+  // Workers get a limited view: no Reports (profit/totals), no Settings (business config), and
+  // no Inventory (buying prices are cost/financial data, same sensitivity as profit -- worker
+  // stock questions still work fine through Chat's own get_inventory tool).
+  const nav = role === 'worker' ? allNav.filter(n => !['/reports', '/settings', '/inventory'].includes(n.to)) : allNav;
 
   const sideLink = ({ isActive }: { isActive: boolean }) =>
     `w-full flex items-center gap-3 px-4 py-3 rounded-lg font-bold ease-out-expo duration-200 ${

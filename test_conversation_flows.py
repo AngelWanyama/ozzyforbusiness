@@ -837,6 +837,46 @@ async def test_every_proposal_type_individually(client):
     await check_proposal_type(client, "propose_restock", "+256700001040", low_stock_shoes, "restocked 10 more shoes, bought at 15000 each", {"confirm"})
 
 
+async def test_worker_invite_deferred_phone_number(client):
+    """2026-09-24 REGRESSION: "add a worker with phone number X" in one message worked (tested
+    above), but "I need to add an employee" (no number yet) followed by the number as its own,
+    separate reply lost all memory of the request -- turn 2 sometimes guessed right from the bare
+    number alone, but turn 3's "Yes" always failed ("you sent a 'yes' but didn't include any
+    details"), because nothing was ever persisted while the phone number was still missing.
+    Root cause: generate_worker_invite required worker_phone_number, so the model had no tool
+    call to make (and nothing to store) when it wasn't known yet, unlike propose_sale/
+    propose_restock which already have an 'incomplete' proposal for exactly this gap. Fixed by
+    making the field optional, adding generate_worker_invite_incomplete as a real persisted
+    proposal when it's missing, and deterministically capturing a bare follow-up phone number
+    (same reliability pattern as _parse_single_number for buying price/restock cost)."""
+    print("\n=== CHAT: worker invite survives the phone number arriving as its own message ===")
+    phone = "+256700001041"
+    await cleanup(phone)
+    token = await register(client, phone)
+    headers = {"Authorization": f"Bearer {token}"}
+    await client.patch("/api/v1/users/me", json={"business_name": "Angel Shop", "onboarding_completed": True}, headers=headers)
+
+    r = await client.post("/api/v1/chat/process", json={"text": "I need to add an employee"}, headers=headers)
+    d1 = r.json()
+    print("  turn 1:", d1)
+    check("turn 1 asks for the phone number without claiming anything is done", "phone" in (d1.get("reply") or "").lower(), d1)
+
+    r = await client.post("/api/v1/chat/process", json={"text": "+256700009982"}, headers=headers)
+    d2 = r.json()
+    print("  turn 2:", d2)
+    check("turn 2 recognizes the bare phone number and shows a real confirm button (not plain text)", d2.get("action") == "confirm" and bool(d2.get("proposal_id")), d2)
+
+    r = await client.post("/api/v1/chat/process", json={"text": "Yes"}, headers=headers)
+    d3 = r.json()
+    print("  turn 3:", d3)
+    reply3 = (d3.get("reply") or "").lower()
+    check("turn 3's plain 'yes' actually generates the invite code, not a lost-context reply", "invite code" in reply3 or "code" in reply3, d3)
+    check("turn 3 does not fall back to the lost-context failure message", "didn't include any details" not in reply3, d3)
+
+    await cleanup(phone)
+    await cleanup("+256700009982")
+
+
 async def test_cogs_profit_calculation(client):
     """2026-09-23, CRITICAL: net_profit was sales minus expenses everywhere in the app, cost of
     goods sold never subtracted despite buying_price being collected. Recreates Angel's exact
@@ -955,6 +995,7 @@ async def main():
         await test_cogs_unknown_buying_price_is_honest(client)
 
         await test_every_proposal_type_individually(client)
+        await test_worker_invite_deferred_phone_number(client)
 
     print("\n=== SUMMARY ===")
     for label, status in results:

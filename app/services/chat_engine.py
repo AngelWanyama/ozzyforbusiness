@@ -74,7 +74,7 @@ READ_ONLY_FUNCTIONS = {"get_report_summary", "get_recent_activity", "get_invento
 # full context rather than straight to a commit_* handler.
 INCOMPLETE_PROPOSAL_FUNCTIONS = {
     "propose_sale_incomplete", "propose_expense_incomplete", "propose_sale_awaiting_buying_price",
-    "propose_restock_awaiting_price",
+    "propose_restock_awaiting_price", "generate_worker_invite_incomplete",
 }
 
 _SINGLE_NUMBER_RE = re.compile(r"[\d][\d,]*(?:\.\d+)?")
@@ -85,6 +85,24 @@ def _parse_single_number(text: str) -> Optional[float]:
     if len(nums) == 1:
         return float(nums[0].replace(",", ""))
     return None
+
+
+# Confirmed live 2026-09-24: "I need to add an employee" -> phone number given on its own next
+# message used to lose all context, because nothing was persisted while the phone number was
+# still missing (see generate_worker_invite_incomplete). A bare phone-number reply here is
+# captured deterministically, same reliability reasoning as _parse_single_number for buying
+# price/restock cost -- the model isn't asked to recognize this, code guarantees it every time.
+_PHONE_CANDIDATE_RE = re.compile(r"\+?[\d][\d\s-]{7,16}\d")
+
+
+def _parse_phone_number(text: str) -> Optional[str]:
+    m = _PHONE_CANDIDATE_RE.search(text.strip())
+    if not m:
+        return None
+    candidate = m.group(0)
+    if sum(c.isdigit() for c in candidate) < 9:
+        return None
+    return re.sub(r"[\s-]", "", candidate)
 
 
 # Confirmed live 2026-09-23: a rigid "the whole message must be exactly one of these words"
@@ -242,8 +260,19 @@ TOOLS = [
     }},
     {"type": "function", "function": {
         "name": "generate_worker_invite",
-        "description": "PROPOSE step (Volume 17). Returns a preview, never actually creates the invite code -- always call this directly when a new worker's phone number is given, do not ask in plain text whether to proceed first, the app shows a real confirm button after this call and no code is generated until that's confirmed.",
-        "parameters": {"type": "object", "properties": {"worker_phone_number": {"type": "string"}}, "required": ["worker_phone_number"]},
+        "description": (
+            "PROPOSE step (Volume 17). Returns a preview, never actually creates the invite code -- "
+            "always call this directly as soon as it's clear the entrepreneur wants to add/invite a "
+            "worker or employee, even if you don't have their phone number yet. Do not ask for the "
+            "phone number in plain text first and do not wait for it before calling this -- omit "
+            "worker_phone_number entirely when it hasn't been given, the app itself asks for it "
+            "afterward in its own follow-up turn and remembers that it's waiting, that is not your "
+            "job here. Confirmed live 2026-09-24: asking in plain text instead of calling this loses "
+            "all memory of the request by the next message, since nothing gets stored until this "
+            "function is actually called -- call it every time this intent comes up, with or without "
+            "the number, never only in plain text."
+        ),
+        "parameters": {"type": "object", "properties": {"worker_phone_number": {"type": "string"}}, "required": []},
     }},
     {"type": "function", "function": {
         "name": "propose_remove_worker",
@@ -540,6 +569,18 @@ class ChatEngine:
                 item = (await db.execute(stmt)).scalars().first()
                 if item:
                     return await self._finalize_restock_proposal(db, user, item, pending.payload["quantity"], price)
+
+        # Same deterministic pattern, for a worker invite still missing its phone number.
+        # Confirmed live 2026-09-24: leaving this to the model meant a bare follow-up phone
+        # number ("+256700009980") arriving on its own next message, with no other words to
+        # anchor it, was sometimes not recognized as answering the question just asked.
+        if pending is not None and pending.function_name == "generate_worker_invite_incomplete":
+            phone = _parse_phone_number(text)
+            if phone is not None:
+                return await self._propose_worker_invite(db, user, {"worker_phone_number": phone})
+            # Not a recognizable phone number ("I don't have one yet", a question) -- falls
+            # through to the model turn below, which has this proposal's context via
+            # CONVERSATION STATE.
 
         if pending is not None and pending.function_name not in INCOMPLETE_PROPOSAL_FUNCTIONS:
             verdict = _classify_reply(text)
@@ -1032,7 +1073,13 @@ class ChatEngine:
     async def _propose_worker_invite(self, db: AsyncSession, user: User, args: Dict[str, Any]) -> Dict[str, Any]:
         phone = (args.get("worker_phone_number") or "").strip()
         if not phone:
-            return {"reply": "What's their phone number? I'll generate an invite code valid for 7 days.", "action": "reply"}
+            preview = "Sure -- what's their phone number? I'll generate an invite code valid for 7 days."
+            # Persisted (incomplete, same pattern as propose_sale_incomplete's missing-amount
+            # case) so this survives to the next turn -- confirmed live 2026-09-24 that leaving
+            # this as an untracked plain-text reply lost all memory of the request the moment
+            # the phone number arrived as its own separate message.
+            await _create_proposal(db, user, "generate_worker_invite_incomplete", {}, preview)
+            return {"reply": preview, "action": "reply"}
         preview = f"Generate a 7-day invite code for {phone}?"
         proposal = await _create_proposal(db, user, "generate_worker_invite", {"worker_phone_number": phone}, preview)
         return {"reply": preview, "action": "confirm", "proposal_id": str(proposal.id)}
